@@ -27,16 +27,55 @@
 
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <linux/rtnetlink.h>
 #include <net/if.h>
-#include <linux/if_ether.h>
-#include <linux/if_packet.h>
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
 #include <netinet/ip.h>
-#include <linux/udp.h>
+
+#ifdef __linux__
+#  include <linux/rtnetlink.h>
+#  include <linux/if_ether.h>
+#  include <linux/if_packet.h>
+#  include <linux/udp.h>
+#else
+
+typedef uint16_t __be16;
+
+struct sockaddr_ll {
+  unsigned short sll_family;
+  __be16 sll_protocol;
+  int sll_ifindex;
+  unsigned short sll_hatype;
+  unsigned char sll_pkttype;
+  unsigned char sll_halen;
+  unsigned char sll_addr[8];
+};
+
+struct iphdr {
+  uint8_t ihl_version;
+  uint8_t tos;
+  uint16_t tot_len;
+  uint16_t id;
+  uint16_t frag_off;
+  uint8_t ttl;
+  uint8_t protocol;
+  uint16_t check;
+  uint32_t saddr;
+  uint32_t daddr;
+};
+
+struct udphdr {
+  __be16 source;
+  __be16 dest;
+  __be16 len;
+  __be16 check;
+};
+
+#  define PF_PACKET AF_INET
+#  define AF_PACKET AF_INET
+#endif
 
 union sockunion {
     sockaddr sa;
