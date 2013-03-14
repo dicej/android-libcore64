@@ -54,12 +54,15 @@
 #include <stdlib.h>
 #include <string.h>
 #include <string>
+
+#ifdef HAVE_SYS_MMAN
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
+#endif
 
 // TODO: put this in a header file and use it everywhere!
 // DISALLOW_COPY_AND_ASSIGN disallows the copy and operator= functions.
@@ -748,6 +751,8 @@ static JNINativeMethod gMethods[] = {
     NATIVE_METHOD(ICU, toLowerCase, "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;"),
     NATIVE_METHOD(ICU, toUpperCase, "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;"),
 };
+
+#ifdef HAVE_SYS_MMAN
 void register_libcore_icu_ICU(JNIEnv* env) {
     std::string path;
     path = u_getDataDirectory();
@@ -800,3 +805,17 @@ void register_libcore_icu_ICU(JNIEnv* env) {
     MAYBE_FAIL_WITH_ICU_ERROR("u_init");
     jniRegisterNativeMethods(env, "libcore/icu/ICU", gMethods, NELEM(gMethods));
 }
+#else // HAVE_SYS_MMAN
+void
+register_libcore_icu_ICU(JNIEnv* e)
+{
+  UErrorCode status = U_ZERO_ERROR;
+  udata_setFileAccess(UDATA_NO_FILES, &status);
+  if (status != U_ZERO_ERROR) abort();
+
+  u_init(&status);
+  if (status != U_ZERO_ERROR) abort();
+
+  jniRegisterNativeMethods(e, "libcore/icu/ICU", gMethods, NELEM(gMethods));
+}
+#endif // HAVE_SYS_MMAN

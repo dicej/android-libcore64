@@ -30,6 +30,13 @@
 
 #include <string>
 
+#ifdef WIN32
+
+bool realpath(const char*, std::string&) {
+  return false;
+}
+
+#else
 #include <errno.h>
 #include <sys/param.h>
 #include <sys/stat.h>
@@ -123,3 +130,4 @@ bool realpath(const char* path, std::string& resolved) {
     }
     return true;
 }
+#endif

@@ -18,6 +18,14 @@
 #include "readlink.h"
 
 #include <string>
+
+#ifdef WIN32
+
+bool readlink(const char*, std::string&) {
+  return false;
+}
+
+#else
 #include <unistd.h>
 
 bool readlink(const char* path, std::string& result) {
@@ -40,3 +48,4 @@ bool readlink(const char* path, std::string& result) {
         bufSize *= 2;
     }
 }
+#endif

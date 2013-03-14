@@ -20,6 +20,7 @@
 #include "JniConstants.h"
 #include "JniException.h"
 #include "LocalArray.h"
+#include "Portability.h"
 #include "ScopedLocalRef.h"
 #include "ScopedPrimitiveArray.h"
 #include "ScopedStringChars.h"
