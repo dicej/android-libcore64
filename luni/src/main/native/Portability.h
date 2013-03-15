@@ -27,8 +27,13 @@
 #define bswap_32 OSSwapInt32
 #define bswap_64 OSSwapInt64
 
-#include <crt_externs.h>
-#define environ (*_NSGetEnviron())
+#include <TargetConditionals.h>
+#if TARGET_OS_IPHONE
+extern char** environ;
+#else
+#  include <crt_externs.h>
+#  define environ (*_NSGetEnviron())
+#endif
 
 // Mac OS has a 64-bit off_t and no 32-bit compatibility cruft.
 #define flock64 flock
