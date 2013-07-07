@@ -34,6 +34,10 @@
 #include <time.h>
 #include <unistd.h>
 
+#if defined(__APPLE__)
+#include <mach/mach_time.h>;
+#endif
+
 static void System_log(JNIEnv* env, jclass, jchar type, jstring javaMessage, jthrowable exception) {
     ScopedUtfChars message(env, javaMessage);
     if (message.c_str() == NULL) {
@@ -93,9 +97,15 @@ static jlong System_currentTimeMillis(JNIEnv*, jclass) {
 }
 
 static jlong System_nanoTime(JNIEnv*, jclass) {
+#if defined(__APPLE__)
+    mach_timebase_info_data_t info;
+    mach_timebase_info(&info);
+    return mach_absolute_time() * (info.numer / info.denom);
+#else
     timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
     return now.tv_sec * 1000000000LL + now.tv_nsec;
+#endif
 }
 
 static jstring System_mapLibraryName(JNIEnv* env, jclass, jstring javaName) {

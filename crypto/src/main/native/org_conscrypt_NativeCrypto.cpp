@@ -4543,15 +4543,12 @@ static void NativeCrypto_X509_REVOKED_print(JNIEnv* env, jclass, jlong bioRef, j
         return;
     }
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wwrite-strings"
     BIO_printf(bio, "Serial Number: ");
     i2a_ASN1_INTEGER(bio, revoked->serialNumber);
     BIO_printf(bio, "\nRevocation Date: ");
     ASN1_TIME_print(bio, revoked->revocationDate);
     BIO_printf(bio, "\n");
-    X509V3_extensions_print(bio, "CRL entry extensions", revoked->extensions, 0, 0);
-#pragma GCC diagnostic pop
+    X509V3_extensions_print(bio, const_cast<char*>("CRL entry extensions"), revoked->extensions, 0, 0);
 }
 
 static jbyteArray NativeCrypto_get_X509_CRL_crl_enc(JNIEnv* env, jclass, jlong x509CrlRef) {

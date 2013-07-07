@@ -281,7 +281,13 @@ static jobject makeStructTimeval(JNIEnv* env, const struct timeval& tv) {
 
 static jobject makeStructUcred(JNIEnv* env, const struct ucred& u) {
   static jmethodID ctor = env->GetMethodID(JniConstants::structUcredClass, "<init>", "(III)V");
+#ifdef __APPLE__
+  jniThrowException(env, "java/lang/UnsupportedOperationException",
+                    "todo: OS X does not have ucred.pid/uid/gid");
+  return 0;
+#else
   return env->NewObject(JniConstants::structUcredClass, ctor, u.pid, u.uid, u.gid);
+#endif
 }
 
 static jobject makeStructUtsname(JNIEnv* env, const struct utsname& buf) {

@@ -402,8 +402,12 @@ static void OsConstants_initConstants(JNIEnv* env, jclass c) {
     initConstant(env, c, "SO_KEEPALIVE", SO_KEEPALIVE);
     initConstant(env, c, "SO_LINGER", SO_LINGER);
     initConstant(env, c, "SO_OOBINLINE", SO_OOBINLINE);
+#if defined(SO_PASSCRED)
     initConstant(env, c, "SO_PASSCRED", SO_PASSCRED);
+#endif
+#if defined(SO_PEERCRED)
     initConstant(env, c, "SO_PEERCRED", SO_PEERCRED);
+#endif
     initConstant(env, c, "SO_RCVBUF", SO_RCVBUF);
     initConstant(env, c, "SO_RCVLOWAT", SO_RCVLOWAT);
     initConstant(env, c, "SO_RCVTIMEO", SO_RCVTIMEO);
