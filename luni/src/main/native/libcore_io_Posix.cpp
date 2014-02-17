@@ -753,7 +753,11 @@ static jint Posix_getsockoptByte(JNIEnv* env, jobject, jobject javaFd, jint leve
     int fd = jniGetFDFromFileDescriptor(env, javaFd);
     u_char result = 0;
     socklen_t size = sizeof(result);
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
     throwIfMinusOne(env, "getsockopt", TEMP_FAILURE_RETRY(getsockopt(fd, level, option, &result, &size)));
+#else
+    throwIfMinusOne(env, "getsockopt", TEMP_FAILURE_RETRY(getsockopt(fd, level, option, (char*)&result, &size)));
+#endif
     return result;
 }
 
@@ -764,7 +768,11 @@ static jobject Posix_getsockoptInAddr(JNIEnv* env, jobject, jobject javaFd, jint
     ss.ss_family = AF_INET; // This is only for the IPv4-only IP_MULTICAST_IF.
     sockaddr_in* sa = reinterpret_cast<sockaddr_in*>(&ss);
     socklen_t size = sizeof(sa->sin_addr);
-    int rc = TEMP_FAILURE_RETRY(getsockopt(fd, level, option, &sa->sin_addr, &size));
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
+   int rc = TEMP_FAILURE_RETRY(getsockopt(fd, level, option, &sa->sin_addr, &size));
+#else
+   int rc = TEMP_FAILURE_RETRY(getsockopt(fd, level, option, (char*)&sa->sin_addr, &size));
+#endif
     if (rc == -1) {
         throwErrnoException(env, "getsockopt");
         return NULL;
@@ -776,7 +784,11 @@ static jint Posix_getsockoptInt(JNIEnv* env, jobject, jobject javaFd, jint level
     int fd = jniGetFDFromFileDescriptor(env, javaFd);
     jint result = 0;
     socklen_t size = sizeof(result);
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
     throwIfMinusOne(env, "getsockopt", TEMP_FAILURE_RETRY(getsockopt(fd, level, option, &result, &size)));
+#else
+    throwIfMinusOne(env, "getsockopt", TEMP_FAILURE_RETRY(getsockopt(fd, level, option, (char*)&result, &size)));
+#endif
     return result;
 }
 
@@ -785,7 +797,11 @@ static jobject Posix_getsockoptLinger(JNIEnv* env, jobject, jobject javaFd, jint
     struct linger l;
     socklen_t size = sizeof(l);
     memset(&l, 0, size);
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
     int rc = TEMP_FAILURE_RETRY(getsockopt(fd, level, option, &l, &size));
+#else
+    int rc = TEMP_FAILURE_RETRY(getsockopt(fd, level, option, (char*)&l, &size));
+#endif
     if (rc == -1) {
         throwErrnoException(env, "getsockopt");
         return NULL;
@@ -798,7 +814,11 @@ static jobject Posix_getsockoptTimeval(JNIEnv* env, jobject, jobject javaFd, jin
     struct timeval tv;
     socklen_t size = sizeof(tv);
     memset(&tv, 0, size);
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
     int rc = TEMP_FAILURE_RETRY(getsockopt(fd, level, option, &tv, &size));
+#else
+    int rc = TEMP_FAILURE_RETRY(getsockopt(fd, level, option, (char*)&tv, &size));
+#endif
     if (rc == -1) {
         throwErrnoException(env, "getsockopt");
         return NULL;
@@ -811,7 +831,11 @@ static jobject Posix_getsockoptUcred(JNIEnv* env, jobject, jobject javaFd, jint 
   struct ucred u;
   socklen_t size = sizeof(u);
   memset(&u, 0, size);
-  int rc = TEMP_FAILURE_RETRY(getsockopt(fd, level, option, &u, &size));
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
+    int rc = TEMP_FAILURE_RETRY(getsockopt(fd, level, option, &u, &size));
+#else
+    int rc = TEMP_FAILURE_RETRY(getsockopt(fd, level, option, (char*)&u, &size));
+#endif
   if (rc == -1) {
     throwErrnoException(env, "getsockopt");
     return NULL;

@@ -5,15 +5,27 @@
 // If some of them are included into the new version of MinGW, they could be removed from this file
 
 #include <stdio.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+
+#include <iphlpapi.h>
+
 #include "Portability.h"
+
+#define IF_NAMESIZE	32
+
+typedef unsigned int uid_t;
+typedef unsigned int gid_t;
+
+typedef long loff_t;
 
 // Sockets
 typedef int socklen_t;
 
 struct ucred {
 	unsigned int 	pid;
-	unsigned int 	uid;
-	unsigned int 	gid;
+	uid_t 	uid;
+	gid_t 	gid;
 };
 
 
@@ -22,13 +34,105 @@ struct passwd
 {
   char *pw_name;		// Username.
   char *pw_passwd;		// Password.
-  unsigned int pw_uid;	// User ID.
-  unsigned int pw_gid;	// Group ID.
+  uid_t pw_uid;	// User ID.
+  gid_t pw_gid;	// Group ID.
   char	*pw_comment;	// Comment
   char *pw_gecos;		// Real name.
   char *pw_dir;			// Home directory.
   char *pw_shell;		// Shell program.
 };
+
+int getpwnam_r(const char *name, struct passwd *pwd,
+            char *buf, size_t buflen, struct passwd **result)
+{
+	// TODO Implement record from WinAPI
+	result = NULL;
+	return 0;
+}
+
+int getpwuid_r(uid_t uid, struct passwd *pwd,
+            char *buf, size_t buflen, struct passwd **result)
+{
+	// TODO Implement record from WinAPI
+	result = NULL;
+	return 0;	
+}
+
+// chown
+int chown(const char *path, uid_t owner, gid_t group)
+{
+	errno = EBADF;
+	return -1;
+}
+
+int fchown(int fd, uid_t owner, gid_t group)
+{
+	errno = EBADF;
+	return -1;
+}
+
+// fcntl
+
+struct flock64 {
+        short  l_type;
+        short  l_whence;
+        loff_t l_start;
+        loff_t l_len;
+        pid_t  l_pid;
+        /*__ARCH_FLOCK64_PAD*/
+};
+
+int fcntl(int fd, int cmd, ... /* arg */ )
+{
+	errno = EBADF;
+	return -1;
+}
+
+// fdatasync
+
+int fdatasync(int fd)
+{
+	errno = EBADF;
+	return -1;
+}
+
+int fsync(int fd)
+{
+	errno = EBADF;
+	return -1;
+}
+
+// getgid, uid, ppid
+
+gid_t getgid(void)
+{
+	return -1;
+}
+gid_t getegid(void)
+{
+	return -1;
+}
+pid_t getppid(void)
+{
+	return -1;
+}
+uid_t getuid(void)
+{
+	return -1;
+}
+uid_t geteuid(void)
+{
+	return -1;
+}
+
+
+// chmod
+
+int fchmod(int fd, mode_t mode)
+{
+	errno = EBADF;
+	return -1;
+}
 
 // utsname
 struct utsname
@@ -72,6 +176,24 @@ struct ifreq {
     };
 };
 
+char *if_indextoname(unsigned int ifindex, char *ifname)
+{
+	// TODO The if_indextoname function can be replaced by 
+	//      a call to the ConvertInterfaceIndexToLuid function 
+	//      to convert an interface index to a NET_LUID followed 
+	//      by a call to the ConvertInterfaceLuidToNameA to convert 
+	//      the NET_LUID to the ANSI interface name.
+	return NULL;
+}
+
+int inet_pton(int af, const char *src, void *dst)
+{
+	// TODO The InetPton function converts an IPv4 or 
+	//      IPv6 Internet network address in its standard 
+	//      text presentation form into its numeric binary form.
+	return 0;
+}
+
 // StatFS
 #define _fullpath(res,path,size) \
   (GetFullPathName ((path), (size), (res), NULL) ? (res) : NULL)
@@ -104,6 +226,12 @@ struct statfs {
    long long f_frsize;
 };
 #endif /* HAVE_SYS_VFS_H */
+
+static int fstatfs (int fd, struct statfs *buf)
+{
+	errno = EINVAL;
+	return -1;
+}
 
 static int __statfs (const char *path, struct statfs *buf)
   {
@@ -218,6 +346,29 @@ int asprintf(char **strp, const char *fmt, ...)
     status = vasprintf(strp, fmt, args);
     va_end(args);
     return status;
+}
+
+// lstat
+
+int lstat(const char *path, struct stat *buf)
+{
+	// We don't support symbolic links in Windows
+	errno = EBADF;
+	return -1;
+}
+
+// sysconf
+#define _SC_GETPW_R_SIZE_MAX    0x0048
+
+int sysconf(int name)
+{
+	switch (name)
+	{
+	case _SC_GETPW_R_SIZE_MAX: return 1024;		// TODO I have no idea what we should return here
+	default:
+		errno = EINVAL;
+		return -1;
+	}
 }
 
 #endif
