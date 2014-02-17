@@ -31,28 +31,37 @@
 #include "UniquePtr.h"
 #include "toStringArray.h"
 
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
+
 #include <arpa/inet.h>
-#include <errno.h>
-#include <fcntl.h>
 #include <net/if.h>
 #include <netdb.h>
 #include <netinet/in.h>
-#include <netinet/in.h>
 #include <poll.h>
 #include <pwd.h>
-#include <signal.h>
-#include <stdlib.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
-#include <sys/socket.h>
-#include <sys/stat.h>
-#include <sys/time.h>
-#include <sys/types.h>
 #include <sys/uio.h>
 #include <sys/utsname.h>
 #include <sys/wait.h>
 #include <termios.h>
+
+#else
+
+#include <ws2tcpip.h>
+#include <winsock2.h>
+#include "mingw-extensions.h"
+
+#endif
+
+#include <errno.h>
+#include <fcntl.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <sys/time.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 #define TO_JAVA_STRING(NAME, EXP) \
@@ -234,6 +243,14 @@ static jobject makeStructPasswd(JNIEnv* env, const struct passwd& pw) {
 }
 
 static jobject makeStructStat(JNIEnv* env, const struct stat& sb) {
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
+	jlong blksize = static_cast<jlong>(sb.st_blksize);
+	jlong blocks = static_cast<jlong>(sb.st_blocks);
+#else
+	jlong blksize = -1;
+	jlong blocks = -1;
+#endif
+
     static jmethodID ctor = env->GetMethodID(JniConstants::structStatClass, "<init>",
             "(JJIJIIJJJJJJJ)V");
     return env->NewObject(JniConstants::structStatClass, ctor,
@@ -242,8 +259,7 @@ static jobject makeStructStat(JNIEnv* env, const struct stat& sb) {
             static_cast<jint>(sb.st_uid), static_cast<jint>(sb.st_gid),
             static_cast<jlong>(sb.st_rdev), static_cast<jlong>(sb.st_size),
             static_cast<jlong>(sb.st_atime), static_cast<jlong>(sb.st_mtime),
-            static_cast<jlong>(sb.st_ctime), static_cast<jlong>(sb.st_blksize),
-            static_cast<jlong>(sb.st_blocks));
+            static_cast<jlong>(sb.st_ctime), blksize, blocks);
 }
 
 static jobject makeStructStatFs(JNIEnv* env, const struct statfs& sb) {

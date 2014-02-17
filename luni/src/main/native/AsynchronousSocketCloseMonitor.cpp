@@ -40,7 +40,9 @@ static AsynchronousSocketCloseMonitor* blockedThreadList = NULL;
 #if defined(__APPLE__)
 static const int BLOCKED_THREAD_SIGNAL = SIGUSR2;
 #else
+#	if !defined(__MINGW32__) && !defined(__MINGW64__)
 static const int BLOCKED_THREAD_SIGNAL = SIGRTMIN + 2;
+#	endif
 #endif
 
 static void blockedThreadSignalHandler(int /*signal*/) {
@@ -48,6 +50,7 @@ static void blockedThreadSignalHandler(int /*signal*/) {
 }
 
 void AsynchronousSocketCloseMonitor::init() {
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
     // Ensure that the signal we send interrupts system calls but doesn't kill threads.
     // Using sigaction(2) lets us ensure that the SA_RESTART flag is not set.
     // (The whole reason we're sending this signal is to unblock system calls!)
@@ -59,13 +62,16 @@ void AsynchronousSocketCloseMonitor::init() {
     if (rc == -1) {
         ALOGE("setting blocked thread signal handler failed: %s", strerror(errno));
     }
+#endif
 }
 
 void AsynchronousSocketCloseMonitor::signalBlockedThreads(int fd) {
     ScopedPthreadMutexLock lock(&blockedThreadListMutex);
     for (AsynchronousSocketCloseMonitor* it = blockedThreadList; it != NULL; it = it->mNext) {
         if (it->mFd == fd) {
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
             pthread_kill(it->mThread, BLOCKED_THREAD_SIGNAL);
+#endif
             // Keep going, because there may be more than one thread...
         }
     }

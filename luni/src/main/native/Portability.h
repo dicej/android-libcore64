@@ -107,6 +107,7 @@ bswap_64(T v)
           ((static_cast<uint64_t>(v) << 56)));
 }
 
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
 inline char*
 strtok_r(char* source, const char* delimiters, char** context)
 {
@@ -152,6 +153,7 @@ strtok_r(char* source, const char* delimiters, char** context)
   *context = 0;
   return result;
 }
+#endif
 
 #else
 

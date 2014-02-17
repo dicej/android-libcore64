@@ -15,7 +15,12 @@
  */
 
 #include "jni.h"
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
 #include <sys/socket.h>
+#else
+#include <winsock2.h>
+#include "mingw-extensions.h"
+#endif
 
 // Convert from sockaddr_storage to Inet4Address (AF_INET), Inet6Address (AF_INET6), or
 // InetUnixAddress (AF_UNIX). If 'port' is non-NULL and the address family includes a notion
