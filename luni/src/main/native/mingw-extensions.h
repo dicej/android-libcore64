@@ -4,8 +4,6 @@
 // mingw-w64 now lacks support of these functions and structures
 // If some of them are included into the new version of MinGW, they could be removed from this file
 
-// test change to see if I can push
-
 #include <windows.h>
 #include <stdio.h>
 #include <sys/stat.h>
@@ -37,9 +35,9 @@ struct passwd
 {
   char *pw_name;		// Username.
   char *pw_passwd;		// Password.
-  uid_t pw_uid;	// User ID.
-  gid_t pw_gid;	// Group ID.
-  char	*pw_comment;	// Comment
+  uid_t pw_uid;			// User ID.
+  gid_t pw_gid;			// Group ID.
+  char *pw_comment;		// Comment
   char *pw_gecos;		// Real name.
   char *pw_dir;			// Home directory.
   char *pw_shell;		// Shell program.
@@ -338,7 +336,31 @@ uid_t geteuid(void)
 {
 	return -1;
 }
-
+int seteuid(uid_t euid)
+{
+	errno = EPERM;
+	return -1;
+}
+int setegid(gid_t egid)
+{
+	errno = EPERM;
+	return -1;
+}
+int setgid(gid_t gid)
+{
+	errno = EPERM;
+	return -1;
+}
+pid_t setsid(void)
+{
+	errno = EPERM;
+	return -1;
+}
+int setuid(uid_t euid)
+{
+	errno = EPERM;
+	return -1;
+}
 
 // chmod
 
@@ -348,7 +370,7 @@ int fchmod(int fd, mode_t mode)
 	return -1;
 }
 
-// utsname
+// uname
 struct utsname
 {
 	char 	machine [20];
@@ -357,6 +379,12 @@ struct utsname
 	char 	sysname [20];
 	char 	version [20];
 };
+
+int uname(struct utsname *buf)
+{
+	errno = EFAULT;
+	return -1;
+}
 
 // ioctl
 
@@ -615,6 +643,83 @@ int poll(struct pollfd *fds, nfds_t nfds, int timeout)
 {
 	errno = EFAULT;
 	return -1;
+}
+
+int socketpair(int domain, int type, int protocol, int sv[2])
+{
+	errno = EFAULT;
+	return -1;
+}
+
+// pread/pwrite/sendfile
+
+ssize_t pread64(int fd, void *buf, size_t count, off_t offset)
+{
+    ssize_t retval;
+    off_t saved_pos = lseek (fd, 0, SEEK_CUR);
+
+    lseek (fd, offset, SEEK_SET);
+    retval = read(fd, buf, count);
+    lseek (fd, saved_pos, SEEK_SET);
+
+    return retval;    
+}
+
+ssize_t pwrite64(int fd, const void *buf, size_t count, off_t offset)
+{
+    ssize_t retval;
+    off_t saved_pos = lseek (fd, 0, SEEK_CUR);
+
+    lseek (fd, offset, SEEK_SET);
+    retval = write(fd, buf, count);
+    lseek (fd, saved_pos, SEEK_SET);
+
+    return retval;
+}
+
+ssize_t sendfile(int out_fd, int in_fd, off_t * offset, size_t count)
+{
+	errno = EINVAL;
+	return -1;
+}
+
+pid_t waitpid(pid_t pid, int *status, int options)
+{
+	// TODO Use GetExitCodeProcess here
+	errno = EINVAL;
+	return -1;
+}
+
+#define unsetenv(pname) SetEnvironmentVariable(pname, NULL)
+
+#define setenv(__pname,__pvalue,___overwrite) \
+({ \
+  int result; \
+ if (___overwrite == 0 && getenv (__pname)) result = 0; \
+   else \
+     result = SetEnvironmentVariable (__pname,__pvalue); \
+ result; \
+})
+
+// termios
+
+int tcsendbreak(int fd, int duration)
+{
+	// NB If the terminal is not using asynchronous serial data transmission, 
+	//    tcsendbreak() returns without taking any action.
+	return 0;
+}
+
+int tcdrain(int fd)
+{
+	return 0;
+}
+
+// signals
+
+char *strsignal(int sig)
+{
+	return "No signals in Windows!";
 }
 
 #endif
