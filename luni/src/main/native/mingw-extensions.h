@@ -4,6 +4,8 @@
 // mingw-w64 now lacks support of these functions and structures
 // If some of them are included into the new version of MinGW, they could be removed from this file
 
+// test change to see if I can push
+
 #include <windows.h>
 #include <stdio.h>
 #include <sys/stat.h>
