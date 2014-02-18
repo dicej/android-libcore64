@@ -64,10 +64,45 @@ int chown(const char *path, uid_t owner, gid_t group)
 	errno = EBADF;
 	return -1;
 }
+int lchown(const char *path, uid_t owner, gid_t group)
+{
+	errno = EBADF;
+	return -1;
+}
 
 int fchown(int fd, uid_t owner, gid_t group)
 {
 	errno = EBADF;
+	return -1;
+}
+
+// mincore
+int mincore(void *addr, size_t length, unsigned char *vec)
+{
+	errno = EFAULT;
+	return -1;
+}
+
+// mkdir
+int mkdir(const char *pathname, mode_t mode)
+{
+	// Just ignoring the mode
+	return mkdir(pathname);
+}
+
+// mlock/munlock
+
+int mlock(const void *addr, size_t len)
+{
+	// TODO use VirtualLock here
+	errno = EPERM;
+	return -1;
+}
+
+int munlock(const void *addr, size_t len)
+{
+	// TODO use VirtualUnlock here
+	errno = EPERM;
 	return -1;
 }
 
@@ -143,6 +178,22 @@ struct utsname
 	char 	sysname [20];
 	char 	version [20];
 };
+
+// ioctl
+
+int ioctl(int d, int request, ...)
+{
+	errno = EBADF;
+	return -1;
+}
+
+// kill
+
+int kill(pid_t pid, int sig)
+{
+	errno = EPERM;
+	return -1;
+}
 
 // ifreq
 
