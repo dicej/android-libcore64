@@ -4,6 +4,9 @@
 // mingw-w64 now lacks support of these functions and structures
 // If some of them are included into the new version of MinGW, they could be removed from this file
 
+// including Winsock2.h unconditionally as it has to be included before windows.h
+#include <Winsock2.h>
+
 #include <windows.h>
 #include <stdio.h>
 #include <sys/stat.h>

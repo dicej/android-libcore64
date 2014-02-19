@@ -42,12 +42,32 @@ static const int BLOCKED_THREAD_SIGNAL = SIGUSR2;
 #else
 #	if !defined(__MINGW32__) && !defined(__MINGW64__)
 static const int BLOCKED_THREAD_SIGNAL = SIGRTMIN + 2;
+#   else
+#       include <windows.h>
 #	endif
 #endif
 
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
 static void blockedThreadSignalHandler(int /*signal*/) {
     // Do nothing. We only sent this signal for its side-effect of interrupting syscalls.
 }
+#else
+typedef struct _APC_SOCKET_PARAMETER {
+    SOCKET socket;
+    int result;
+    int lastError;
+} APC_SOCKET_PARAMETER;
+
+VOID CALLBACK closeSocketApcCallback(ULONG_PTR socketParam) {
+    APC_SOCKET_PARAMETER *param = static_cast<APC_SOCKET_PARAMETER*>(socketParam);
+    param->result = closesocket(param->socket);
+    if (param->result == SOCKET_ERROR) {
+        param->lastError = WSAGetLastError();
+    } else {
+        param->lastError = 0;
+    }
+}
+#endif
 
 void AsynchronousSocketCloseMonitor::init() {
 #if !defined(__MINGW32__) && !defined(__MINGW64__)
@@ -65,12 +85,18 @@ void AsynchronousSocketCloseMonitor::init() {
 #endif
 }
 
-void AsynchronousSocketCloseMonitor::signalBlockedThreads(int fd) {
+void AsynchronousSocketCloseMonitor::signalBlockedThreads(SOCKET fd) {
     ScopedPthreadMutexLock lock(&blockedThreadListMutex);
     for (AsynchronousSocketCloseMonitor* it = blockedThreadList; it != NULL; it = it->mNext) {
         if (it->mFd == fd) {
 #if !defined(__MINGW32__) && !defined(__MINGW64__)
             pthread_kill(it->mThread, BLOCKED_THREAD_SIGNAL);
+#else
+            HANDLE hThread = OpenThread(THREAD_SET_CONTEXT, FALSE, it->mThreadId);
+            APC_SOCKET_PARAMETER data;
+            data.socket = fd;
+            QueueUserAPC(closeSocketApcCallback, hThread, &data);
+            CloseHandle(hThread);
 #endif
             // Keep going, because there may be more than one thread...
         }
@@ -80,7 +106,11 @@ void AsynchronousSocketCloseMonitor::signalBlockedThreads(int fd) {
 AsynchronousSocketCloseMonitor::AsynchronousSocketCloseMonitor(int fd) {
     ScopedPthreadMutexLock lock(&blockedThreadListMutex);
     // Who are we, and what are we waiting for?
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
     mThread = pthread_self();
+#else
+    mThreadId = GetCurrentThreadId();
+#endif
     mFd = fd;
     // Insert ourselves at the head of the intrusive doubly-linked list...
     mPrev = NULL;
