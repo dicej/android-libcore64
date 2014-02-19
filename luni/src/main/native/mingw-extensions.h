@@ -731,4 +731,12 @@ char *strsignal(int sig)
 	return "No signals in Windows!";
 }
 
+// symlink
+
+int symlink(const char *path1, const char *path2)
+{
+	errno = EACCES;
+	return -1;
+}
+
 #endif
