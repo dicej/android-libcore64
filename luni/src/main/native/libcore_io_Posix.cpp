@@ -1188,22 +1188,31 @@ static jint Posix_setsid(JNIEnv* env, jobject) {
 
 static void Posix_setsockoptByte(JNIEnv* env, jobject, jobject javaFd, jint level, jint option, jint value) {
     int fd = jniGetFDFromFileDescriptor(env, javaFd);
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
     u_char byte = value;
     throwIfMinusOne(env, "setsockopt", TEMP_FAILURE_RETRY(setsockopt(fd, level, option, &byte, sizeof(byte))));
+#else
+    char byte = value;
+    throwIfMinusOne(env, "setsockopt", TEMP_FAILURE_RETRY(setsockopt(fd, level, option, &byte, sizeof(byte))));
+#endif
 }
 
 static void Posix_setsockoptIfreq(JNIEnv* env, jobject, jobject javaFd, jint level, jint option, jstring javaInterfaceName) {
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
     struct ifreq req;
     if (!fillIfreq(env, javaInterfaceName, req)) {
         return;
     }
     int fd = jniGetFDFromFileDescriptor(env, javaFd);
     throwIfMinusOne(env, "setsockopt", TEMP_FAILURE_RETRY(setsockopt(fd, level, option, &req, sizeof(req))));
+#else
+	// TODO Implement this on windows
+#endif
 }
 
 static void Posix_setsockoptInt(JNIEnv* env, jobject, jobject javaFd, jint level, jint option, jint value) {
     int fd = jniGetFDFromFileDescriptor(env, javaFd);
-    throwIfMinusOne(env, "setsockopt", TEMP_FAILURE_RETRY(setsockopt(fd, level, option, &value, sizeof(value))));
+    throwIfMinusOne(env, "setsockopt", TEMP_FAILURE_RETRY(setsockopt(fd, level, option, (char*)&value, sizeof(value))));
 }
 
 #if defined(__APPLE__) && MAC_OS_X_VERSION_MAX_ALLOWED < 1070
@@ -1212,11 +1221,15 @@ static void Posix_setsockoptIpMreqn(JNIEnv*, jobject, jobject, jint, jint, jint)
 static void Posix_setsockoptGroupReq(JNIEnv*, jobject, jobject, jint, jint, jobject) { abort(); }
 #else
 static void Posix_setsockoptIpMreqn(JNIEnv* env, jobject, jobject javaFd, jint level, jint option, jint value) {
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
     ip_mreqn req;
     memset(&req, 0, sizeof(req));
     req.imr_ifindex = value;
     int fd = jniGetFDFromFileDescriptor(env, javaFd);
     throwIfMinusOne(env, "setsockopt", TEMP_FAILURE_RETRY(setsockopt(fd, level, option, &req, sizeof(req))));
+#else
+	// TODO How to do this in Windows?
+#endif
 }
 
 static void Posix_setsockoptGroupReq(JNIEnv* env, jobject, jobject javaFd, jint level, jint option, jobject javaGroupReq) {
@@ -1234,7 +1247,11 @@ static void Posix_setsockoptGroupReq(JNIEnv* env, jobject, jobject javaFd, jint 
     }
 
     int fd = jniGetFDFromFileDescriptor(env, javaFd);
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
     int rc = TEMP_FAILURE_RETRY(setsockopt(fd, level, option, &req, sizeof(req)));
+#else
+    int rc = TEMP_FAILURE_RETRY(setsockopt(fd, level, option, (char*)&req, sizeof(req)));
+#endif	
     if (rc == -1 && errno == EINVAL) {
         // Maybe we're a 32-bit binary talking to a 64-bit kernel?
         // glibc doesn't automatically handle this.
@@ -1259,7 +1276,11 @@ static void Posix_setsockoptLinger(JNIEnv* env, jobject, jobject javaFd, jint le
     struct linger value;
     value.l_onoff = env->GetIntField(javaLinger, lOnoffFid);
     value.l_linger = env->GetIntField(javaLinger, lLingerFid);
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
     throwIfMinusOne(env, "setsockopt", TEMP_FAILURE_RETRY(setsockopt(fd, level, option, &value, sizeof(value))));
+#else
+    throwIfMinusOne(env, "setsockopt", TEMP_FAILURE_RETRY(setsockopt(fd, level, option, (char*)&value, sizeof(value))));
+#endif
 }
 
 static void Posix_setsockoptTimeval(JNIEnv* env, jobject, jobject javaFd, jint level, jint option, jobject javaTimeval) {
@@ -1269,7 +1290,11 @@ static void Posix_setsockoptTimeval(JNIEnv* env, jobject, jobject javaFd, jint l
     struct timeval value;
     value.tv_sec = env->GetLongField(javaTimeval, tvSecFid);
     value.tv_usec = env->GetLongField(javaTimeval, tvUsecFid);
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
     throwIfMinusOne(env, "setsockopt", TEMP_FAILURE_RETRY(setsockopt(fd, level, option, &value, sizeof(value))));
+#else
+    throwIfMinusOne(env, "setsockopt", TEMP_FAILURE_RETRY(setsockopt(fd, level, option, (char*)&value, sizeof(value))));
+#endif
 }
 
 static void Posix_setuid(JNIEnv* env, jobject, jint uid) {
