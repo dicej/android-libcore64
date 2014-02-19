@@ -16,6 +16,11 @@
 
 #define LOG_TAG "Posix"
 
+#if defined(__MINGW32__) || defined(__MINGW64__)
+#include "mingw-extensions.h"
+#endif
+
+
 #include "AsynchronousSocketCloseMonitor.h"
 #include "ExecStrings.h"
 #include "JNIHelp.h"
@@ -51,7 +56,6 @@
 
 #include <ws2tcpip.h>
 #include <winsock2.h>
-#include "mingw-extensions.h"
 
 #endif
 
@@ -105,7 +109,6 @@ struct addrinfo_deleter {
     } while (_rc == -1); \
     _rc; })
 #else
-#   include <Winsock2.h>
 #define NET_FAILURE_RETRY(jni_env, return_type, syscall_name, java_fd, ...) ({ \
     return_type _rc = -1; \
     { \
@@ -1139,7 +1142,11 @@ static jint Posix_recvfromBytes(JNIEnv* env, jobject, jobject javaFd, jobject ja
     memset(&ss, 0, sizeof(ss));
     sockaddr* from = (javaInetSocketAddress != NULL) ? reinterpret_cast<sockaddr*>(&ss) : NULL;
     socklen_t* fromLength = (javaInetSocketAddress != NULL) ? &sl : 0;
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
     jint recvCount = NET_FAILURE_RETRY(env, ssize_t, recvfrom, javaFd, bytes.get() + byteOffset, byteCount, flags, from, fromLength);
+#else
+    jint recvCount = NET_FAILURE_RETRY(env, ssize_t, recvfrom, javaFd, reinterpret_cast<char*>(bytes.get() + byteOffset), byteCount, flags, from, fromLength);
+#endif
     fillInetSocketAddress(env, recvCount, javaInetSocketAddress, ss);
     return recvCount;
 }
@@ -1193,7 +1200,11 @@ static jint Posix_sendtoBytes(JNIEnv* env, jobject, jobject javaFd, jobject java
         return -1;
     }
     const sockaddr* to = (javaInetAddress != NULL) ? reinterpret_cast<const sockaddr*>(&ss) : NULL;
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
     return NET_FAILURE_RETRY(env, ssize_t, sendto, javaFd, bytes.get() + byteOffset, byteCount, flags, to, sa_len);
+#else
+    return NET_FAILURE_RETRY(env, ssize_t, sendto, javaFd, reinterpret_cast<const char*>(bytes.get() + byteOffset), byteCount, flags, to, sa_len);
+#endif
 }
 
 static void Posix_setegid(JNIEnv* env, jobject, jint egid) {
@@ -1288,7 +1299,7 @@ static void Posix_setsockoptGroupReq(JNIEnv* env, jobject, jobject javaFd, jint 
 #if !defined(__MINGW32__) && !defined(__MINGW64__)
     int rc = TEMP_FAILURE_RETRY(setsockopt(fd, level, option, &req, sizeof(req)));
 #else
-    int rc = TEMP_FAILURE_RETRY(setsockopt(fd, level, option, (char*)&req, sizeof(req)));
+    int rc = TEMP_FAILURE_RETRY(setsockopt(fd, level, option, reinterpret_cast<char*>(&req), sizeof(req)));
 #endif	
     if (rc == -1 && errno == EINVAL) {
         // Maybe we're a 32-bit binary talking to a 64-bit kernel?
@@ -1301,7 +1312,11 @@ static void Posix_setsockoptGroupReq(JNIEnv* env, jobject, jobject javaFd, jint 
         group_req64 req64;
         req64.gr_interface = req.gr_interface;
         memcpy(&req64.gr_group, &req.gr_group, sizeof(req.gr_group));
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
         rc = TEMP_FAILURE_RETRY(setsockopt(fd, level, option, &req64, sizeof(req64)));
+#else
+        rc = TEMP_FAILURE_RETRY(setsockopt(fd, level, option, reinterpret_cast<const char*>(&req64), sizeof(req64)));
+#endif
     }
     throwIfMinusOne(env, "setsockopt", rc);
 }
@@ -1387,6 +1402,7 @@ static jstring Posix_strsignal(JNIEnv* env, jobject, jint signal) {
 }
 
 static void Posix_symlink(JNIEnv* env, jobject, jstring javaOldPath, jstring javaNewPath) {
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
     ScopedUtfChars oldPath(env, javaOldPath);
     if (oldPath.c_str() == NULL) {
         return;
@@ -1396,6 +1412,9 @@ static void Posix_symlink(JNIEnv* env, jobject, jstring javaOldPath, jstring jav
         return;
     }
     throwIfMinusOne(env, "symlink", TEMP_FAILURE_RETRY(symlink(oldPath.c_str(), newPath.c_str())));
+#else
+    throwErrnoExceptionWithCode(env, -1, "symlink support on Windows not implemented");
+#endif
 }
 
 static jlong Posix_sysconf(JNIEnv* env, jobject, jint name) {

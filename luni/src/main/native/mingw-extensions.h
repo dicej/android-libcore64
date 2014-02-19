@@ -26,6 +26,12 @@ typedef long loff_t;
 // Sockets
 typedef int socklen_t;
 
+#ifndef TEMP_FAILURE_RETRY
+/* Stub. On Windows EINTR makes no sense AFAIK */
+#define TEMP_FAILURE_RETRY(exp) (exp)
+#endif
+
+
 struct ucred {
 	unsigned int 	pid;
 	uid_t 	uid;
