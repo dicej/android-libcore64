@@ -83,6 +83,7 @@ struct addrinfo_deleter {
  *
  * Returns the result of 'exp', though a Java exception will be pending if the result is -1.
  */
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
 #define NET_FAILURE_RETRY(jni_env, return_type, syscall_name, java_fd, ...) ({ \
     return_type _rc = -1; \
     do { \
@@ -103,6 +104,33 @@ struct addrinfo_deleter {
         } \
     } while (_rc == -1); \
     _rc; })
+#else
+#   include <Winsock2.h>
+#define NET_FAILURE_RETRY(jni_env, return_type, syscall_name, java_fd, ...) ({ \
+    return_type _rc = -1; \
+    { \
+        /* TODO: this cast looks ugly and potentially unsafe, think about fixing somehow */ \
+        SOCKET _fd = jniGetFDFromFileDescriptor(jni_env, java_fd); \
+        AsynchronousSocketCloseMonitor _monitor(_fd); \
+        _rc = syscall_name(_fd, __VA_ARGS__); \
+    } \
+    if (_rc == SOCKET_ERROR) { \
+        int lastError = WSAGetLastError(); \
+        switch (lastError) { \
+        case WSAEINTR: { \
+                jniThrowException(jni_env, "java/net/SocketException", "Socket closed"); \
+                break; \
+            } \
+        default: { \
+                /* TODO: with a format string we could show the arguments too, like strace(1). */ \
+                /* TODO: probably need to convert from WSAGetLastError() to POSIS errno code */ \
+                throwErrnoExceptionWithCode(jni_env, lastError, # syscall_name); \
+                break; \
+            } \
+        } \
+    } \
+    _rc; })
+#endif
 
 static void throwException(JNIEnv* env, jclass exceptionClass, jmethodID ctor3, jmethodID ctor2,
         const char* functionName, int error) {
@@ -136,6 +164,16 @@ static void throwErrnoException(JNIEnv* env, const char* functionName) {
             "<init>", "(Ljava/lang/String;I)V");
     throwException(env, JniConstants::errnoExceptionClass, ctor3, ctor2, functionName, error);
 }
+
+#if defined(__MINGW32__) || defined(__MINGW64__)
+static void throwErrnoExceptionWithCode(JNIEnv* env, int error, const char* functionName) {
+    static jmethodID ctor3 = env->GetMethodID(JniConstants::errnoExceptionClass,
+            "<init>", "(Ljava/lang/String;ILjava/lang/Throwable;)V");
+    static jmethodID ctor2 = env->GetMethodID(JniConstants::errnoExceptionClass,
+            "<init>", "(Ljava/lang/String;I)V");
+    throwException(env, JniConstants::errnoExceptionClass, ctor3, ctor2, functionName, error);
+}
+#endif
 
 static void throwGaiException(JNIEnv* env, const char* functionName, int error) {
   // Cache the methods ids before we throw, so we don't call GetMethodID with a pending exception.
