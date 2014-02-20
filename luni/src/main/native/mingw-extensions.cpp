@@ -561,7 +561,7 @@ int symlink(const char *path1, const char *path2)
 	return -1;
 }
 
-inline int winsock2errno(int winsock_error) {
+int winsock2errno(int winsock_error) {
     /* TODO: implement this */
     return winsock_error;
 }
