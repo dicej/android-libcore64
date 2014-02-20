@@ -59,7 +59,7 @@ typedef struct _APC_SOCKET_PARAMETER {
 } APC_SOCKET_PARAMETER;
 
 VOID CALLBACK closeSocketApcCallback(ULONG_PTR socketParam) {
-    APC_SOCKET_PARAMETER *param = static_cast<APC_SOCKET_PARAMETER*>(socketParam);
+    APC_SOCKET_PARAMETER *param = reinterpret_cast<APC_SOCKET_PARAMETER*>(socketParam);
     param->result = closesocket(param->socket);
     if (param->result == SOCKET_ERROR) {
         param->lastError = WSAGetLastError();
@@ -95,7 +95,7 @@ void AsynchronousSocketCloseMonitor::signalBlockedThreads(SOCKET fd) {
             HANDLE hThread = OpenThread(THREAD_SET_CONTEXT, FALSE, it->mThreadId);
             APC_SOCKET_PARAMETER data;
             data.socket = fd;
-            QueueUserAPC(closeSocketApcCallback, hThread, &data);
+            QueueUserAPC(closeSocketApcCallback, hThread, reinterpret_cast<ULONG_PTR>(&data));
             CloseHandle(hThread);
 #endif
             // Keep going, because there may be more than one thread...
@@ -103,7 +103,7 @@ void AsynchronousSocketCloseMonitor::signalBlockedThreads(SOCKET fd) {
     }
 }
 
-AsynchronousSocketCloseMonitor::AsynchronousSocketCloseMonitor(int fd) {
+AsynchronousSocketCloseMonitor::AsynchronousSocketCloseMonitor(SOCKET fd) {
     ScopedPthreadMutexLock lock(&blockedThreadListMutex);
     // Who are we, and what are we waiting for?
 #if !defined(__MINGW32__) && !defined(__MINGW64__)
