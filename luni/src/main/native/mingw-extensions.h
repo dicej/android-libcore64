@@ -26,6 +26,12 @@ typedef long loff_t;
 // Sockets
 typedef int socklen_t;
 
+#define UNIX_PATH_LEN   108
+typedef struct _sockaddr_un {
+    uint16_t   sun_family;
+    char       sun_path[UNIX_PATH_LEN];
+} sockaddr_un;
+
 #ifndef TEMP_FAILURE_RETRY
 /* Stub. On Windows EINTR makes no sense AFAIK */
 #define TEMP_FAILURE_RETRY(exp) (exp)
@@ -737,6 +743,11 @@ int symlink(const char *path1, const char *path2)
 {
 	errno = EACCES;
 	return -1;
+}
+
+inline int winsock2errno(int winsock_error) {
+    /* TODO: implement this */
+    return winsock_error;
 }
 
 #endif

@@ -126,8 +126,7 @@ struct addrinfo_deleter {
             } \
         default: { \
                 /* TODO: with a format string we could show the arguments too, like strace(1). */ \
-                /* TODO: probably need to convert from WSAGetLastError() to POSIS errno code */ \
-                throwErrnoExceptionWithCode(jni_env, lastError, # syscall_name); \
+                throwErrnoExceptionWithCode(jni_env, winsock2errno(lastError), # syscall_name); \
                 break; \
             } \
         } \
