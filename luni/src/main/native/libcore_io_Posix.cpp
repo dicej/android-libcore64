@@ -1123,12 +1123,16 @@ static jint Posix_readBytes(JNIEnv* env, jobject, jobject javaFd, jobject javaBy
 }
 
 static jint Posix_readv(JNIEnv* env, jobject, jobject javaFd, jobjectArray buffers, jintArray offsets, jintArray byteCounts) {
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
     IoVec<ScopedBytesRW> ioVec(env, env->GetArrayLength(buffers));
     if (!ioVec.init(buffers, offsets, byteCounts)) {
         return -1;
     }
     int fd = jniGetFDFromFileDescriptor(env, javaFd);
     return throwIfMinusOne(env, "readv", TEMP_FAILURE_RETRY(readv(fd, ioVec.get(), ioVec.size())));
+#else
+    throwErrnoExceptionWithCode(env, ENOTSUP, "readv support on Windows not implemented");
+#endif
 }
 
 static jint Posix_recvfromBytes(JNIEnv* env, jobject, jobject javaFd, jobject javaBytes, jint byteOffset, jint byteCount, jint flags, jobject javaInetSocketAddress) {
@@ -1412,7 +1416,7 @@ static void Posix_symlink(JNIEnv* env, jobject, jstring javaOldPath, jstring jav
     }
     throwIfMinusOne(env, "symlink", TEMP_FAILURE_RETRY(symlink(oldPath.c_str(), newPath.c_str())));
 #else
-    throwErrnoExceptionWithCode(env, -1, "symlink support on Windows not implemented");
+    throwErrnoExceptionWithCode(env, ENOTSUP, "symlink support on Windows not implemented");
 #endif
 }
 
@@ -1476,12 +1480,16 @@ static jint Posix_writeBytes(JNIEnv* env, jobject, jobject javaFd, jbyteArray ja
 }
 
 static jint Posix_writev(JNIEnv* env, jobject, jobject javaFd, jobjectArray buffers, jintArray offsets, jintArray byteCounts) {
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
     IoVec<ScopedBytesRO> ioVec(env, env->GetArrayLength(buffers));
     if (!ioVec.init(buffers, offsets, byteCounts)) {
         return -1;
     }
     int fd = jniGetFDFromFileDescriptor(env, javaFd);
     return throwIfMinusOne(env, "writev", TEMP_FAILURE_RETRY(writev(fd, ioVec.get(), ioVec.size())));
+#else
+    throwErrnoExceptionWithCode(env, ENOTSUP, "writev support on Windows not implemented");
+#endif
 }
 
 static JNINativeMethod gMethods[] = {
