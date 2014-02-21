@@ -19,25 +19,36 @@
 #include "JNIHelp.h"
 #include "JniConstants.h"
 
-#include <errno.h>
-#include <fcntl.h>
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
+
 #include <netdb.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <poll.h>
+#include <sys/ioctl.h>
+#include <sys/mman.h>
+#include <sys/socket.h>
+#include <sys/wait.h>
+#include <net/if.h> // After <sys/socket.h> to work around a Mac header file bug.
+
+#else
+
+#include <ws2tcpip.h>
+#include <winsock2.h>
+#include <mingw-extensions.h>
+
+#endif
+
+#include <errno.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <stdlib.h>
 #ifdef HAVE_SYS_CAPABILITY
 #  include <sys/capability.h>
 #endif
-#include <sys/ioctl.h>
-#include <sys/mman.h>
-#include <sys/socket.h>
 #include <sys/stat.h>
-#include <sys/wait.h>
 #include <unistd.h>
 
-#include <net/if.h> // After <sys/socket.h> to work around a Mac header file bug.
 
 static void initConstant(JNIEnv* env, jclass c, const char* fieldName, int value) {
     jfieldID field = env->GetStaticFieldID(c, fieldName, "I");
