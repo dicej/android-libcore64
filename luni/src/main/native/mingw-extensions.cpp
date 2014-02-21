@@ -544,8 +544,18 @@ int fchmod(int fd, mode_t mode)
 
 int uname(struct utsname *buf)
 {
-	errno = EFAULT;
-	return -1;
+#ifdef __x86_64__
+	strcpy(buf->machine, "x86_64");
+#else
+	strcpy(buf->machine, "x86");
+#endif
+
+	strcpy(buf->sysname, "Windows");
+	char verstr[20];
+	itoa(GetVersion(), verstr, 10);
+	strcpy(buf->version, verstr);
+	
+	return 0;
 }
 
 // ioctl
