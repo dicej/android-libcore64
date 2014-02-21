@@ -554,6 +554,9 @@ int uname(struct utsname *buf)
 	char verstr[20];
 	itoa(GetVersion(), verstr, 10);
 	strcpy(buf->version, verstr);
+	/* TODO: implement returning nodename properly;
+	 * used to retrieve local host name in java.net.InetAddress.getLocalHost() */
+	strcpy(buf->nodename, "localhost");
 	
 	return 0;
 }

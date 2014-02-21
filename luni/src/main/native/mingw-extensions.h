@@ -33,7 +33,8 @@ typedef struct _sockaddr_un {
 } sockaddr_un;
 
 #ifndef TEMP_FAILURE_RETRY
-/* Stub. On Windows EINTR makes no sense AFAIK */
+/* Stub. On Windows EINTR makes no sense AFAIK.
+ * TODO: verify that. */
 #define TEMP_FAILURE_RETRY(exp) (exp)
 #endif
 
@@ -101,6 +102,7 @@ int mkdir(const char *pathname, mode_t mode);
 #define FILE_MAP_EXECUTE    0x0020
 #endif /* FILE_MAP_EXECUTE */
 
+// TODO: isn't it the same function as windowsErrorToErrno() in mingw-extensions.cpp ?
 int mmap_winapi_error_to_posix(const DWORD winError);
 DWORD mmap_page(const int prot);
 DWORD mmap_file(const int prot);
