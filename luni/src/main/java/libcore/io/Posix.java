@@ -27,6 +27,16 @@ import libcore.util.MutableInt;
 import libcore.util.MutableLong;
 
 public final class Posix implements Os {
+    private static native void init() throws ErrnoException;
+
+	static {
+		try {
+			init();
+		} catch (ErrnoException e) {
+			throw new RuntimeException(e);
+		}
+	}
+
     Posix() { }
 
     public native FileDescriptor accept(FileDescriptor fd, InetSocketAddress peerAddress) throws ErrnoException, SocketException;

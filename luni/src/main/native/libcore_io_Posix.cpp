@@ -452,6 +452,18 @@ private:
     struct passwd* mResult;
 };
 
+static void Posix_init(JNIEnv* env, jclass) {
+#if defined(__MINGW32__) || defined(__MINGW64__)
+	// In Windows socket API needs initialization
+
+	static WSADATA wsaData;
+	int res = WSAStartup(MAKEWORD(2,2), &wsaData);
+	if (res != 0) {
+		throwErrnoException(env, "init");
+	}
+#endif
+}
+
 static jobject Posix_accept(JNIEnv* env, jobject, jobject javaFd, jobject javaInetSocketAddress) {
     sockaddr_storage ss;
     socklen_t sl = sizeof(ss);
@@ -1493,6 +1505,7 @@ static jint Posix_writev(JNIEnv* env, jobject, jobject javaFd, jobjectArray buff
 }
 
 static JNINativeMethod gMethods[] = {
+    NATIVE_METHOD(Posix, init, "()V"),
     NATIVE_METHOD(Posix, accept, "(Ljava/io/FileDescriptor;Ljava/net/InetSocketAddress;)Ljava/io/FileDescriptor;"),
     NATIVE_METHOD(Posix, access, "(Ljava/lang/String;I)Z"),
     NATIVE_METHOD(Posix, bind, "(Ljava/io/FileDescriptor;Ljava/net/InetAddress;I)V"),
