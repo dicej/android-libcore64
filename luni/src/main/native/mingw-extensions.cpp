@@ -1,5 +1,233 @@
 #include "mingw-extensions.h"
 
+#define USERNAME_LENGTH		255
+
+int windowsErrorToErrno(DWORD winErr)
+{
+	int error;
+	switch (winErr) {
+	
+	// EACCES
+	case ERROR_ACCESS_DENIED: 
+	case ERROR_ACCOUNT_DISABLED: 
+	case ERROR_ACCOUNT_RESTRICTION:
+	case ERROR_CANNOT_MAKE:
+	case ERROR_CURRENT_DIRECTORY:
+	case ERROR_INVALID_ACCESS:
+	case ERROR_INVALID_LOGON_HOURS: 
+	case ERROR_INVALID_WORKSTATION:
+	case ERROR_LOCK_VIOLATION:
+	case ERROR_LOGON_FAILURE:
+	case ERROR_NO_SUCH_PRIVILEGE:
+	case ERROR_PASSWORD_EXPIRED:
+	case ERROR_PRIVILEGE_NOT_HELD:
+	case ERROR_SHARING_VIOLATION:
+		error = EACCES;
+		break;
+
+	// EBUSY
+	case ERROR_ALREADY_ASSIGNED:
+	case ERROR_BUSY:
+	case ERROR_BUSY_DRIVE:
+	case ERROR_DEVICE_IN_USE:
+	case ERROR_DRIVE_LOCKED:
+	case ERROR_LOCKED:
+	case ERROR_OPEN_FILES:
+	case ERROR_PATH_BUSY:
+	case ERROR_PIPE_BUSY:
+		error = EBUSY;
+		break;
+
+	// EEXIST
+	case ERROR_ALREADY_EXISTS:
+	case ERROR_FILE_EXISTS:
+		error = EEXIST;
+		break;
+
+	// EFAULT
+	case ERROR_INVALID_ADDRESS:
+	case ERROR_INVALID_BLOCK:
+	case ERROR_NOACCESS:
+		error = EFAULT;
+		break;
+		
+	// EINVAL
+	case ERROR_BAD_LENGTH:
+	case ERROR_BAD_USERNAME:
+	case ERROR_DIRECTORY:
+	case ERROR_ENVVAR_NOT_FOUND:
+	case ERROR_INVALID_DATA:
+	case ERROR_INVALID_FLAGS:
+	case ERROR_INVALID_NAME:
+	case ERROR_INVALID_OWNER:
+	case ERROR_INVALID_PARAMETER:
+	case ERROR_INVALID_PRIMARY_GROUP:
+	case ERROR_INVALID_SIGNAL_NUMBER:
+	case ERROR_MAPPED_ALIGNMENT:
+	case ERROR_NONE_MAPPED:
+		error = EINVAL;
+		break;
+	
+	// ENOENT
+	case ERROR_BAD_PATHNAME:
+	case ERROR_FILE_NOT_FOUND:
+	case ERROR_PATH_NOT_FOUND:
+	case ERROR_SWAPERROR:
+		error = ENOENT;
+		break;
+	
+	// ENODEV
+	case ERROR_BAD_DEVICE:
+	case ERROR_BAD_UNIT:
+	case ERROR_DEV_NOT_EXIST:
+	case ERROR_FILE_INVALID:
+	case ERROR_INVALID_DRIVE:
+	case ERROR_UNRECOGNIZED_VOLUME:
+		error = ENODEV;
+		break;
+	
+	// ENOEXEC
+	case ERROR_BAD_EXE_FORMAT:
+	case ERROR_BAD_FORMAT:
+	case ERROR_EXE_MARKED_INVALID:
+	case ERROR_INVALID_EXE_SIGNATURE:
+		error = ENOEXEC;
+		break;
+	
+	// ENXIO
+	case ERROR_BAD_DRIVER_LEVEL:
+	case ERROR_UNRECOGNIZED_MEDIA:
+		error = ENXIO;
+		break;
+	
+	// EIO
+	case ERROR_BAD_COMMAND:
+	case ERROR_CANTOPEN:
+	case ERROR_CANTREAD:
+	case ERROR_CANTWRITE:
+	case ERROR_CRC:
+	case ERROR_DISK_CHANGE:
+	case ERROR_GEN_FAILURE:
+	case ERROR_INVALID_TARGET_HANDLE:
+	case ERROR_IO_DEVICE:
+	case ERROR_NO_MORE_SEARCH_HANDLES:
+	case ERROR_READ_FAULT:
+	case ERROR_SEEK:
+	case ERROR_WRITE_FAULT:
+		error = EIO;
+		break;
+	
+	// EPIPE
+	case ERROR_BAD_PIPE:
+	case ERROR_BROKEN_PIPE:
+	case ERROR_MORE_DATA:
+	case ERROR_NO_DATA:
+	case ERROR_PIPE_CONNECTED:
+	case ERROR_PIPE_LISTENING:
+	case ERROR_PIPE_NOT_CONNECTED:
+		error = EPIPE;
+		break;
+
+	// ERANGE
+	case ERROR_ARITHMETIC_OVERFLOW:
+		error = ERANGE;
+		break;
+
+	// ENAMETOOLONG
+	case ERROR_BUFFER_OVERFLOW:
+	case ERROR_FILENAME_EXCED_RANGE:
+		error = ENAMETOOLONG; break;
+
+	// ENOSYS
+	case ERROR_CALL_NOT_IMPLEMENTED:
+	case ERROR_INVALID_FUNCTION:
+		error = ENOSYS;
+		break;
+
+	// ENOTEMPTY
+	case ERROR_DIR_NOT_EMPTY:
+		error = ENOTEMPTY;
+		break;
+
+	// ENOSPC
+	case ERROR_DISK_FULL:
+	case ERROR_HANDLE_DISK_FULL:
+		error = ENOSPC;
+		break;
+
+	// ENOMEM
+	case ERROR_INSUFFICIENT_BUFFER:
+	case ERROR_NOT_ENOUGH_MEMORY:
+	case ERROR_OUTOFMEMORY:
+	case ERROR_STACK_OVERFLOW:
+		error = ENOMEM;
+		break;
+
+	// EBADF
+	case ERROR_INVALID_HANDLE:
+		error = EBADF;
+		break;
+	
+	// EPERM
+	case ERROR_INVALID_PASSWORD:
+		error = EPERM;
+		break;
+
+	// EINTR
+	case ERROR_IO_INCOMPLETE:
+	case ERROR_OPERATION_ABORTED:
+		error = EINTR;
+		break;
+
+	// E2BIG
+	case ERROR_META_EXPANSION_TOO_LONG:
+		error = E2BIG;
+		break;
+	
+	// ESPIPE
+	case ERROR_NEGATIVE_SEEK:
+	case ERROR_SEEK_ON_DEVICE:
+		error = ESPIPE;
+		break;
+
+	// EAGAIN
+	case ERROR_NOT_READY:
+	case ERROR_NO_PROC_SLOTS:
+		error = EAGAIN;
+		break;
+
+	// EXDEV
+	case ERROR_NOT_SAME_DEVICE:
+		error = EXDEV;
+		break;
+
+	// ENFILE
+	case ERROR_SHARING_BUFFER_EXCEEDED:
+		error = ENFILE;
+		break;
+	
+	// EMFILE
+	case ERROR_TOO_MANY_MODULES:
+	case ERROR_TOO_MANY_OPEN_FILES:
+		error = EMFILE;
+		break;
+	
+	// ECHILD
+	case ERROR_WAIT_NO_CHILDREN:
+		error = ECHILD;
+		break;
+	
+	// EROFS
+	case ERROR_WRITE_PROTECT:
+		error = EROFS;
+		break;
+
+	default:
+		error = ENOSYS;
+	}
+	return error;
+}
+
 int getpwnam_r(const char *name, struct passwd *pwd,
             char *buf, size_t buflen, struct passwd **result)
 {
@@ -11,9 +239,23 @@ int getpwnam_r(const char *name, struct passwd *pwd,
 int getpwuid_r(uid_t uid, struct passwd *pwd,
             char *buf, size_t buflen, struct passwd **result)
 {
-	// TODO Implement record from WinAPI
-	result = NULL;
-	return 0;	
+	DWORD len = buflen;
+	if (GetUserName(buf, &len) == 0)
+	{
+		result = NULL;
+		return 0;
+	} else {
+		errno = windowsErrorToErrno(GetLastError());
+		return -1;
+	}
+	
+	pwd->pw_name = buf;
+	pwd->pw_gecos = "";
+	pwd->pw_dir = "";
+	
+	// On success, getpwnam_r() and getpwuid_r() return zero, and set *result to pwd
+	*result = pwd;
+	return 0;
 }
 
 // chown
