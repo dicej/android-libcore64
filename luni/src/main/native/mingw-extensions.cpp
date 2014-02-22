@@ -242,7 +242,7 @@ int getpwuid_r(uid_t /*uid*/, struct passwd *pwd,
 	// The current implementation of this function gets the name of the CURRENT user.
 	// We just ignore the first argument
 	
-	// If you want to find a name of OTHER user, you should use LookupAccountSid 
+	// If you want to find the name of an OTHER user, you should use LookupAccountSid
 	// (and send SID as the first argument as soon as it's the closest replacement for Win32's "uid")
 	
 	DWORD len = buflen;
@@ -254,8 +254,8 @@ int getpwuid_r(uid_t /*uid*/, struct passwd *pwd,
 	else
 	{
 		pwd->pw_name = buf;
-		pwd->pw_gecos = "";
-		pwd->pw_dir = "";
+		pwd->pw_gecos = (const char*)"";
+		pwd->pw_dir = (const char*)"";
 		
 		// On success, getpwnam_r() and getpwuid_r() return zero, and set *result to pwd
 		*result = pwd;
