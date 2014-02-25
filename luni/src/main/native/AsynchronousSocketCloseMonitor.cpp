@@ -52,20 +52,9 @@ static void blockedThreadSignalHandler(int /*signal*/) {
     // Do nothing. We only sent this signal for its side-effect of interrupting syscalls.
 }
 #else
-typedef struct _APC_SOCKET_PARAMETER {
-    SOCKET socket;
-    int result;
-    int lastError;
-} APC_SOCKET_PARAMETER;
 
 VOID CALLBACK closeSocketApcCallback(ULONG_PTR socketParam) {
-    APC_SOCKET_PARAMETER *param = reinterpret_cast<APC_SOCKET_PARAMETER*>(socketParam);
-    param->result = closesocket(param->socket);
-    if (param->result == SOCKET_ERROR) {
-        param->lastError = WSAGetLastError();
-    } else {
-        param->lastError = 0;
-    }
+	closesocket(static_cast<SOCKET>(socketParam));
 }
 #endif
 
@@ -93,9 +82,7 @@ void AsynchronousSocketCloseMonitor::signalBlockedThreads(SOCKET fd) {
             pthread_kill(it->mThread, BLOCKED_THREAD_SIGNAL);
 #else
             HANDLE hThread = OpenThread(THREAD_SET_CONTEXT, FALSE, it->mThreadId);
-            APC_SOCKET_PARAMETER data;
-            data.socket = fd;
-            QueueUserAPC(closeSocketApcCallback, hThread, reinterpret_cast<ULONG_PTR>(&data));
+            QueueUserAPC(closeSocketApcCallback, hThread, static_cast<ULONG_PTR>(it->mFd));
             CloseHandle(hThread);
 #endif
             // Keep going, because there may be more than one thread...
