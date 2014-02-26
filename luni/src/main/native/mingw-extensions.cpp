@@ -561,12 +561,20 @@ int uname(struct utsname *buf)
 	return 0;
 }
 
-// ioctl
-
-int ioctl(int d, int request, ...)
+int ioctl(int fd, int request, void *argp)
 {
-	errno = EBADF;
-	return -1;
+	if (is_socket(fd)) {
+		int result = ioctlsocket(static_cast<SOCKET>(fd), static_cast<long int>(request), static_cast<u_long*>(argp));
+		if (result == SOCKET_ERROR) {
+			errno = winsock2errno(WSAGetLastError());
+			return -1;
+		}
+		errno = 0;
+		return 0;
+	} else {
+		errno = EBADF;
+		return -1;
+	}
 }
 
 // kill
@@ -985,4 +993,18 @@ int winsock2errno(int winsock_error) {
             return ECONNRESET;
     }
     return winsock_error;
+}
+
+bool is_socket(int fd) {
+    // Here we should check if this is a file or a socket handle.
+    // Thankfully, both types are kernel handles registered in the the same
+    // table, so their values couldn't overlap. Then we check if this
+    // handle is a valid file and if it's not the one, we assume that
+    // it is a SOCKET. Note that if it was a file handle that became invalid
+	// we won't see that here!
+
+	// TODO: maybe switch to NtQueryObject() usage
+
+    struct stat sb;
+    return fstat(fd, &sb) == -1;
 }
