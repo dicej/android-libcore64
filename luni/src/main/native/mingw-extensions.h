@@ -473,9 +473,10 @@ struct utsname
 
 int uname(struct utsname *buf);
 
-// ioctl
-
-int ioctl(int d, int request, ...);
+/** Assuming Windows ioctlsocket() function signature for now.
+ * I see that ioctl() is used only twice in luni, this should be enough.
+ */
+int ioctl(int fd, int request, void *argp);
 
 // kill
 
@@ -715,5 +716,7 @@ int symlink(const char *path1, const char *path2);
 int windowsErrorToErrno(DWORD winErr);
 const char* getErrnoDescription(int errno);
 
+
+bool is_socket(int fd);
 
 #endif

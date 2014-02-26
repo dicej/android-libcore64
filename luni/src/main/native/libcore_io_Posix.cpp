@@ -543,15 +543,7 @@ static void Posix_close(JNIEnv* env, jobject, jobject javaFd) {
     // http://lkml.indiana.edu/hypermail/linux/kernel/0509.1/0877.html
     throwIfMinusOne(env, "close", close(fd));
 #else
-    // Here we should check if this is a file or a socket handler.
-    // Thankfully, both types are kernel handlers registered in the the same
-    // table, so their values couldn't overlap. Then we check if this
-    // handle is a valid file and if it's not the one, we assume that
-    // it is a SOCKET
-
-    struct stat sb;
-    int rc = TEMP_FAILURE_RETRY(fstat(fd, &sb));
-    if (rc == -1) {
+    if (is_socket(fd)) {
         throwIfMinusOne(env, "closesocket", closesocket(fd));
     } else {
         throwIfMinusOne(env, "close", close(fd));
