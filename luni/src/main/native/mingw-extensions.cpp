@@ -22,6 +22,7 @@ int windowsErrorToErrno(DWORD winErr)
 	case ERROR_PASSWORD_EXPIRED:
 	case ERROR_PRIVILEGE_NOT_HELD:
 	case ERROR_SHARING_VIOLATION:
+	case WSAEACCES:
 		error = EACCES;
 		break;
 
@@ -48,9 +49,10 @@ int windowsErrorToErrno(DWORD winErr)
 	case ERROR_INVALID_ADDRESS:
 	case ERROR_INVALID_BLOCK:
 	case ERROR_NOACCESS:
+	case WSAEFAULT:
 		error = EFAULT;
 		break;
-		
+
 	// EINVAL
 	case ERROR_BAD_LENGTH:
 	case ERROR_BAD_USERNAME:
@@ -65,9 +67,10 @@ int windowsErrorToErrno(DWORD winErr)
 	case ERROR_INVALID_SIGNAL_NUMBER:
 	case ERROR_MAPPED_ALIGNMENT:
 	case ERROR_NONE_MAPPED:
+	case WSAEINVAL:
 		error = EINVAL;
 		break;
-	
+
 	// ENOENT
 	case ERROR_BAD_PATHNAME:
 	case ERROR_FILE_NOT_FOUND:
@@ -136,7 +139,8 @@ int windowsErrorToErrno(DWORD winErr)
 	// ENAMETOOLONG
 	case ERROR_BUFFER_OVERFLOW:
 	case ERROR_FILENAME_EXCED_RANGE:
-		error = ENAMETOOLONG; break;
+		error = ENAMETOOLONG;
+		break;
 
 	// ENOSYS
 	case ERROR_CALL_NOT_IMPLEMENTED:
@@ -165,6 +169,7 @@ int windowsErrorToErrno(DWORD winErr)
 
 	// EBADF
 	case ERROR_INVALID_HANDLE:
+	case WSAEBADF:
 		error = EBADF;
 		break;
 	
@@ -176,6 +181,7 @@ int windowsErrorToErrno(DWORD winErr)
 	// EINTR
 	case ERROR_IO_INCOMPLETE:
 	case ERROR_OPERATION_ABORTED:
+	case WSAEINTR:
 		error = EINTR;
 		break;
 
@@ -209,6 +215,7 @@ int windowsErrorToErrno(DWORD winErr)
 	// EMFILE
 	case ERROR_TOO_MANY_MODULES:
 	case ERROR_TOO_MANY_OPEN_FILES:
+	case WSAEMFILE:
 		error = EMFILE;
 		break;
 	
@@ -222,11 +229,153 @@ int windowsErrorToErrno(DWORD winErr)
 		error = EROFS;
 		break;
 
+	// EWOULDBLOCK
+	case WSAEWOULDBLOCK:
+		error = EWOULDBLOCK;
+		break;
+
+	// EINPROGRESS
+	case WSAEINPROGRESS:
+		error = EINPROGRESS;
+		break;
+
+	// EALREADY
+	case WSAEALREADY:
+		error = EALREADY;
+		break;
+
+	// ENOTSOCK
+	case WSAENOTSOCK:
+		error = ENOTSOCK;
+		break;
+
+	// EDESTADDRREQ
+	case WSAEDESTADDRREQ:
+		error = EDESTADDRREQ;
+		break;
+
+	// EMSGSIZE
+	case WSAEMSGSIZE:
+		error = EMSGSIZE;
+		break;
+
+	// EPROTOTYPE
+	case WSAEPROTOTYPE:
+		error = EPROTOTYPE;
+		break;
+
+	// ENOPROTOOPT
+	case WSAENOPROTOOPT:
+		error = ENOPROTOOPT;
+		break;
+
+	// EPROTONOSUPPORT
+	case WSAEPROTONOSUPPORT:
+		error = EPROTONOSUPPORT;
+		break;
+
+	// ESOCKTNOSUPPORT
+	case WSAESOCKTNOSUPPORT:
+		error = ESOCKTNOSUPPORT;
+		break;
+
+	// EOPNOTSUPP
+	case WSAEOPNOTSUPP:
+		error = EOPNOTSUPP;
+		break;
+
+	// EPFNOSUPPORT
+	case WSAEPFNOSUPPORT:
+		error = EPFNOSUPPORT;
+		break;
+
+	// EAFNOSUPPORT
+	case WSAEAFNOSUPPORT:
+		error = EAFNOSUPPORT;
+		break;
+
+	// EADDRINUSE
+	case WSAEADDRINUSE:
+		error = EADDRINUSE;
+		break;
+
+	// EADDRNOTAVAIL
+	case WSAEADDRNOTAVAIL:
+		error = EADDRNOTAVAIL;
+		break;
+
+	// ENETDOWN
+	case WSAENETDOWN:
+		error = ENETDOWN;
+		break;
+
+	// ENETUNREACH
+	case WSAENETUNREACH:
+		error = ENETUNREACH;
+		break;
+
+	// ENETRESET
+	case WSAENETRESET:
+		error = ENETRESET;
+		break;
+
+	// ECONNABORTED
+	case WSAECONNABORTED:
+		error = ECONNABORTED;
+		break;
+
+	// ECONNRESET
+	case WSAECONNRESET:
+		error = ECONNRESET;
+		break;
+
+	// ENOBUFS
+	case WSAENOBUFS:
+		error = ENOBUFS;
+		break;
+
+	// EISCONN
+	case WSAEISCONN:
+		error = EISCONN;
+		break;
+
+	// ENOTCONN
+	case WSAENOTCONN:
+		error = ENOTCONN;
+		break;
+
+	// ESHUTDOWN
+	case WSAESHUTDOWN:
+		error = ESHUTDOWN;
+		break;
+
+	// ETIMEDOUT
+	case WSAETIMEDOUT:
+		error = ETIMEDOUT;
+		break;
+
+	// ECONNREFUSED
+	case WSAECONNREFUSED:
+		error = ECONNREFUSED;
+		break;
+
+	// EHOSTDOWN
+	case WSAEHOSTDOWN:
+		error = EHOSTDOWN;
+		break;
+
+	// EHOSTUNREACH
+	case WSAEHOSTUNREACH:
+		error = EHOSTUNREACH;
+		break;
+
 	default:
 		error = ENOSYS;
 	}
 	return error;
 }
+
+
 
 int getpwnam_r(const char *name, struct passwd *pwd,
             char *buf, size_t buflen, struct passwd **result)
@@ -974,8 +1123,7 @@ int symlink(const char *path1, const char *path2)
 	return -1;
 }
 
-int winsock2errno(int winsock_error) {
-    /* TODO: implement this */
+/*int winsock2errno(int winsock_error) {
     switch (winsock_error) {
         case WSAENETUNREACH:
             return ENETUNREACH;
@@ -985,4 +1133,4 @@ int winsock2errno(int winsock_error) {
             return ECONNRESET;
     }
     return winsock_error;
-}
+}*/

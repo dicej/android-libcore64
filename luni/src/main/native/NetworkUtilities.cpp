@@ -235,7 +235,7 @@ bool setBlocking(SOCKET fd, bool blocking) {
     u_long socketMode = blocking?0:1;
     int rc = ioctlsocket(fd, FIONBIO, &socketMode);
     if (rc == SOCKET_ERROR) {
-        errno = winsock2errno(WSAGetLastError());
+        errno = windowsErrorToErrno(WSAGetLastError());
         return false;
     }
     errno = 0;

@@ -710,6 +710,10 @@ char *strsignal(int sig);
 
 int symlink(const char *path1, const char *path2);
 
-int winsock2errno(int winsock_error);
+// Dealing with error codes
+
+int windowsErrorToErrno(DWORD winErr);
+const char* getErrnoDescription(int errno);
+
 
 #endif

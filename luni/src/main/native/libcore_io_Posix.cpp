@@ -129,7 +129,7 @@ struct addrinfo_deleter {
     } \
     if (_rc == SOCKET_ERROR) { \
         int lastError = WSAGetLastError(); \
-        errno = winsock2errno(lastError); \
+        errno = windowsErrorToErrno(lastError); \
         switch (lastError) { \
         case WSAEINTR: { \
                 jniThrowException(jni_env, "java/net/SocketException", "Socket closed"); \
@@ -137,7 +137,7 @@ struct addrinfo_deleter {
             } \
         default: { \
                 /* TODO: with a format string we could show the arguments too, like strace(1). */ \
-                throwErrnoExceptionWithCode(jni_env, winsock2errno(lastError), # syscall_name); \
+                throwErrnoExceptionWithCode(jni_env, windowsErrorToErrno(lastError), # syscall_name); \
                 break; \
             } \
         } \
