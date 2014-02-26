@@ -558,7 +558,7 @@ public final class IoBridge {
     public static FileDescriptor socket(boolean stream) throws SocketException {
         FileDescriptor fd;
         try {
-            fd = Libcore.os.socket(AF_INET6, stream ? SOCK_STREAM : SOCK_DGRAM, 0);
+            fd = Libcore.os.socket(AF_INET_DEFAULT, stream ? SOCK_STREAM : SOCK_DGRAM, 0);
 
             // The RFC (http://www.ietf.org/rfc/rfc3493.txt) says that IPV6_MULTICAST_HOPS defaults
             // to 1. The Linux kernel (at least up to 2.6.38) accidentally defaults to 64 (which
@@ -567,7 +567,7 @@ public final class IoBridge {
             // have been applied as a result of that discussion. If that bug is ever fixed, we can
             // remove this code. Until then, we manually set the hop limit on IPv6 datagram sockets.
             // (IPv4 is already correct.)
-            if (!stream) {
+            if (!stream && AF_INET_DEFAULT == AF_INET6) {
                 Libcore.os.setsockoptInt(fd, IPPROTO_IPV6, IPV6_MULTICAST_HOPS, 1);
             }
 

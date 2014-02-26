@@ -35,6 +35,11 @@ public final class OsConstants {
     public static boolean WIFSTOPPED(int status) { return (WTERMSIG(status) == 0x7f); }
     public static boolean WIFSIGNALED(int status) { return (WTERMSIG(status + 1) >= 2); }
 
+    /** that is to be used instead of AF_INET6; 
+     * based on build process and defines it has to be equal either to AF_INET or AF_INET6,
+     * depending on whether IPv6 is disabled or not.
+     */
+    public static final int AF_INET_DEFAULT = placeholder();
     public static final int AF_INET = placeholder();
     public static final int AF_INET6 = placeholder();
     public static final int AF_UNIX = placeholder();

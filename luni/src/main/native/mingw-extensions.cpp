@@ -976,5 +976,13 @@ int symlink(const char *path1, const char *path2)
 
 int winsock2errno(int winsock_error) {
     /* TODO: implement this */
+    switch (winsock_error) {
+        case WSAENETUNREACH:
+            return ENETUNREACH;
+        case WSAEFAULT:
+            return EFAULT;
+        case WSAECONNRESET:
+            return ECONNRESET;
+    }
     return winsock_error;
 }

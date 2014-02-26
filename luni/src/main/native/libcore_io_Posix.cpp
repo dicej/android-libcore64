@@ -80,6 +80,16 @@ struct addrinfo_deleter {
     }
 };
 
+#ifdef __DISABLE_IPV6_PROTO
+/** 
+ * Disable IPv6 as IPv6 may not work on some machines yet, and IPv4 is sufficient.
+ * It is done by replacing inetAddressToSockaddr (which forces IPv6) with 
+ * inetAddressToSockaddrVerbatim (which doesn't force IPv6 when passed IPv4 address).
+ *
+ * Use this define only if you really need this!
+ */
+#define inetAddressToSockaddr inetAddressToSockaddrVerbatim
+#endif
 /**
  * Used to retry networking system calls that can return EINTR. Unlike TEMP_FAILURE_RETRY,
  * this also handles the case where the reason for failure is that another thread called
@@ -119,6 +129,7 @@ struct addrinfo_deleter {
     } \
     if (_rc == SOCKET_ERROR) { \
         int lastError = WSAGetLastError(); \
+        errno = winsock2errno(lastError); \
         switch (lastError) { \
         case WSAEINTR: { \
                 jniThrowException(jni_env, "java/net/SocketException", "Socket closed"); \
@@ -130,6 +141,8 @@ struct addrinfo_deleter {
                 break; \
             } \
         } \
+    } else { \
+    	errno = 0; \
     } \
     _rc; })
 #endif
