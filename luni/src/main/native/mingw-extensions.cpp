@@ -1132,15 +1132,24 @@ int symlink(const char *path1, const char *path2)
 }
 
 bool is_socket(int fd) {
-    // Here we should check if this is a file or a socket handle.
-    // Thankfully, both types are kernel handles registered in the the same
-    // table, so their values couldn't overlap. Then we check if this
-    // handle is a valid file and if it's not the one, we assume that
-    // it is a SOCKET. Note that if it was a file handle that became invalid
-	// we won't see that here!
+    /** Here we should check if this is a socket handle.
+     * Fortunately, socket and file handles (which share the same "file descriptor"
+     * methods in POSIX, but have different methods in Windows) are kernel handles
+     * registered in the same table, so their values couldn't overlap.
+     * To check if this is a socket we call getsockopt() and check WSAGetLastError()
+     * returning WSAENOTSOCK on error (other errors or successful call are interpreted
+     * as "fd is a socket")
+     */
 
-	// TODO: maybe switch to NtQueryObject() usage
-
-    struct stat sb;
-    return fstat(fd, &sb) == -1;
+	int sock_type, sock_type_len = sizeof(int);
+	int rc = getsockopt(static_cast<SOCKET>(fd), SOL_SOCKET, SO_TYPE,
+			reinterpret_cast<char*>(&sock_type), &sock_type_len);
+	if (rc == SOCKET_ERROR) {
+		/* getsockopt() cannot get SO_TYPE, that means either
+		 * this is not a socket, or some other general error occurred */
+		/* TODO: handle other errors somehow */
+		return WSAGetLastError() != WSAENOTSOCK;
+	}
+	// if we got here it means getsockopt() passed for fd => fd is a socket
+	return true;
 }
