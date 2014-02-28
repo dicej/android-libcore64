@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <errno.h>
 
 #include <iphlpapi.h>
 
@@ -714,8 +715,7 @@ int symlink(const char *path1, const char *path2);
 // Dealing with error codes
 
 int windowsErrorToErrno(DWORD winErr);
-const char* getErrnoDescription(int errno);
-
+const char* getErrnoDescription(int err);
 
 bool is_socket(int fd);
 
