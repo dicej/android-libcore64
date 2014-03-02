@@ -383,6 +383,134 @@ int windowsErrorToErrno(DWORD winErr)
 	return error;
 }
 
+const char* getErrnoDescription(int err)
+{
+	switch (err) {
+
+	// EACCES
+	case EACCES:
+		return "Permission denied";
+
+	case EFAULT:
+		return "Bad address";
+
+	// EINTR
+	case EINTR:
+		return "Interrupted function call";
+
+	// EINVAL
+	case EINVAL:
+		return "Invalid argument";
+
+	// EBADF
+	case EBADF:
+		return "File handle is not valid";
+
+	// EMFILE
+	case EMFILE:
+		return "Too many open files";
+
+	// EWOULDBLOCK
+	case EWOULDBLOCK:
+		return "Resource temporarily unavailable";
+
+	// EINPROGRESS
+	case EINPROGRESS:
+		return "Operation now in progress";
+
+	// EALREADY
+	case EALREADY:
+		return "Operation already in progress";
+
+	// ENOTSOCK
+	case ENOTSOCK:
+		return "Socket operation on nonsocket";
+
+	// EDESTADDRREQ
+	case EDESTADDRREQ:
+		return "Destination address required";
+
+	// EMSGSIZE
+	case EMSGSIZE:
+		return "Message too long";
+
+	// EPROTOTYPE
+	case EPROTOTYPE:
+		return "Protocol wrong type for socket";
+
+	// ENOPROTOOPT
+	case ENOPROTOOPT:
+		return "Bad protocol option";
+
+	// EPROTONOSUPPORT
+	case EPROTONOSUPPORT:
+		return "Protocol not supported";
+
+	// EOPNOTSUPP
+	case EOPNOTSUPP:
+		return "Operation not supported";
+
+	// EAFNOSUPPORT
+	case EAFNOSUPPORT:
+		return "Address family not supported by protocol family";
+
+	// EADDRINUSE
+	case EADDRINUSE:
+		return "Address already in use";
+
+	// EADDRNOTAVAIL
+	case EADDRNOTAVAIL:
+		return "Cannot assign requested address";
+
+	// ENETDOWN
+	case ENETDOWN:
+		return "Network is down";
+
+	// ENETUNREACH
+	case ENETUNREACH:
+		return "Network is unreachable";
+
+	// ENETRESET
+	case ENETRESET:
+		return "Network dropped connection on reset";
+
+	// ECONNABORTED
+	case ECONNABORTED:
+		return "Software caused connection abort";
+
+	// ECONNRESET
+	case ECONNRESET:
+		return "Connection reset by peer";
+
+	// ENOBUFS
+	case ENOBUFS:
+		return "No buffer space available";
+
+	// EISCONN
+	case EISCONN:
+		return "Socket is already connected";
+
+	// ENOTCONN
+	case ENOTCONN:
+		return "Socket is not connected";
+
+	// ETIMEDOUT
+	case ETIMEDOUT:
+		return "Connection timed out";
+
+	// ECONNREFUSED
+	case ECONNREFUSED:
+		return "Connection refused";
+
+	// EHOSTUNREACH
+	case EHOSTUNREACH:
+		return "No route to host";
+
+	default:
+		return "Undescribed error";
+	}
+}
+
 
 
 int getpwnam_r(const char *name, struct passwd *pwd,
@@ -1302,15 +1430,24 @@ int symlink(const char *path1, const char *path2)
 }
 
 bool is_socket(int fd) {
-    // Here we should check if this is a file or a socket handle.
-    // Thankfully, both types are kernel handles registered in the the same
-    // table, so their values couldn't overlap. Then we check if this
-    // handle is a valid file and if it's not the one, we assume that
-    // it is a SOCKET. Note that if it was a file handle that became invalid
-	// we won't see that here!
+    /** Here we should check if this is a socket handle.
+     * Fortunately, socket and file handles (which share the same "file descriptor"
+     * methods in POSIX, but have different methods in Windows) are kernel handles
+     * registered in the same table, so their values couldn't overlap.
+     * To check if this is a socket we call getsockopt() and check WSAGetLastError()
+     * returning WSAENOTSOCK on error (other errors or successful call are interpreted
+     * as "fd is a socket")
+     */
 
-	// TODO: maybe switch to NtQueryObject() usage
-
-    struct stat sb;
-    return fstat(fd, &sb) == -1;
+	int sock_type, sock_type_len = sizeof(int);
+	int rc = getsockopt(static_cast<SOCKET>(fd), SOL_SOCKET, SO_TYPE,
+			reinterpret_cast<char*>(&sock_type), &sock_type_len);
+	if (rc == SOCKET_ERROR) {
+		/* getsockopt() cannot get SO_TYPE, that means either
+		 * this is not a socket, or some other general error occurred */
+		/* TODO: handle other errors somehow */
+		return WSAGetLastError() != WSAENOTSOCK;
+	}
+	// if we got here it means getsockopt() passed for fd => fd is a socket
+	return true;
 }
