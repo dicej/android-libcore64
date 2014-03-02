@@ -1,3 +1,11 @@
+#include <io.h>
+#include <fcntl.h>
+
+#include <map>
+
+#include <stdarg.h>
+#include <ws2tcpip.h>
+
 #include "mingw-extensions.h"
 
 #define USERNAME_LENGTH		255
@@ -607,16 +615,68 @@ int munlock(const void *addr, size_t len)
 // pipe
 int pipe(int* pipefd)
 {
-	// TODO Implement this using winapi _pipe function 
-	return -1;
+	return socketpair(AF_INET, SOCK_STREAM, IPPROTO_TCP, pipefd);
 }
 
 // fcntl
 
+static std::map<int, bool> socket_nonblocking;	// We have to store this in a map
+												// cause it is impossible to check this in Windows
+
 int fcntl(int fd, int cmd, ... /* arg */ )
 {
-	errno = EBADF;
-	return -1;
+	int res = 0;
+
+	va_list args;
+	va_start(args, cmd);
+
+	if (cmd == F_SETFL) {
+		int flags = va_arg(args, int);
+
+		bool blocking;
+
+		if ((flags & O_NONBLOCK) != 0) {
+			blocking = false;
+		} else {
+			blocking = true;
+		}
+
+		socket_nonblocking[fd] = !blocking;
+
+		u_long socketMode = blocking ? 0 : 1;
+		int rc = ioctl(fd, FIONBIO, &socketMode);
+		if (rc == SOCKET_ERROR) {
+			// ioctl sets the errno in Unix format
+			res = -1;
+			goto exit_end_args;
+		}
+
+		if ((flags & (~O_NONBLOCK)) != 0) {
+			// We don't support any other flags
+			errno = EBADF;
+			res = -1;
+			goto exit_end_args;
+		}
+
+	}
+	else if (cmd == F_GETFL)
+	{
+		if (socket_nonblocking.find(fd) != socket_nonblocking.end() && socket_nonblocking[fd] == true)
+		{
+			res = O_NONBLOCK;
+			goto exit_end_args;
+		}
+		else
+		{
+			res = 0;
+			goto exit_end_args;
+		}
+	}
+
+exit_end_args:
+	va_end(args);
+exit:
+	return res;
 }
 
 // fdatasync
@@ -1059,7 +1119,117 @@ int poll(struct pollfd *fds, nfds_t nfds, int timeout)
 
 int socketpair(int domain, int type, int protocol, int sv[2])
 {
-	errno = EFAULT;
+	struct sockaddr_storage serverfd_addr, outsock_addr;
+	socklen_t addr_len = sizeof(struct sockaddr_storage);
+	struct addrinfo hints, *res;
+	int getaddrinfo_r;
+	int serverfd;
+	int saved_errno;
+	int insock, outsock;
+
+	/* filter out protocol */
+	if (domain != AF_INET && domain != AF_INET6)
+	{
+		errno = EOPNOTSUPP;
+
+		return -1;
+	}
+
+	/* get loopback address */
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = domain;
+	hints.ai_socktype = type;
+	hints.ai_protocol = protocol;
+	hints.ai_flags = 0;
+
+	getaddrinfo_r = getaddrinfo(NULL, "0", &hints, &res);
+	if (getaddrinfo_r != 0)
+	{
+		goto error_exit;
+	}
+
+	serverfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+	if (serverfd == SOCKET_ERROR)
+	{
+		goto out_bind_fail;
+	}
+
+	if (bind(serverfd, res->ai_addr, res->ai_addrlen) == SOCKET_ERROR)
+	{
+		goto error_close_serverfd;
+	}
+
+	if (getsockname(serverfd, (struct sockaddr *) &serverfd_addr, &addr_len) == SOCKET_ERROR)
+	{
+		goto error_close_serverfd;
+	}
+
+	if (type != SOCK_DGRAM)
+	{
+		if (listen(serverfd, 1) == SOCKET_ERROR)
+		{
+			goto error_close_serverfd;
+		}
+	}
+
+	outsock = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+	if (outsock == SOCKET_ERROR)
+	{
+		goto error_close_serverfd;
+	}
+
+	if (type == SOCK_DGRAM)
+	{
+		if (bind(outsock, res->ai_addr, res->ai_addrlen) == SOCKET_ERROR)
+		{
+			goto error_close_outsock;
+		}
+		if (getsockname(outsock, (struct sockaddr *) &outsock_addr, &addr_len) == SOCKET_ERROR)
+		{
+			goto error_close_outsock;
+		}
+	}
+
+	if (connect(outsock, (struct sockaddr *) &serverfd_addr, addr_len) == SOCKET_ERROR)
+	{
+		goto error_close_outsock;
+	}
+
+	if (type != SOCK_DGRAM)
+	{
+		insock = accept(serverfd, NULL, NULL);
+		if (insock == SOCKET_ERROR)
+		{
+			goto error_close_insock;
+		}
+		// Closing the server socket
+		close(serverfd);
+	}
+	else
+	{
+		if (connect(serverfd, (struct sockaddr *) &outsock_addr, addr_len) == SOCKET_ERROR)
+		{
+			goto error_close_outsock;
+		}
+		insock = serverfd;
+	}
+
+	sv[0] = insock;
+	sv[1] = outsock;
+	freeaddrinfo(res);
+	return 0;
+
+	// Error cases
+error_close_insock:
+	closesocket(outsock);
+error_close_outsock:
+	closesocket(insock);
+error_close_serverfd:
+	close(serverfd);
+out_bind_fail:
+	freeaddrinfo(res);
+error_exit:
+	errno = windowsErrorToErrno(WSAGetLastError());
 	return -1;
 }
 

@@ -217,10 +217,10 @@
 #define MSG_EOR         0x80
 #define MSG_TRUNC       0x20
 
-#define O_NOCTTY        00000400
-#define O_NOFOLLOW      00400000
-#define O_NONBLOCK      00004000
-#define O_SYNC          04100000
+#define O_NOCTTY        0x00000400
+#define O_NOFOLLOW      0x00400000
+#define O_NONBLOCK      0x00004000
+#define O_SYNC          0x04100000
 
 #define POLLIN          0x0001
 #define POLLPRI         0x0002
