@@ -1241,8 +1241,7 @@ typedef unsigned int nfds_t;
 
 int poll(struct pollfd *fds, nfds_t nfds, int timeout)
 {
-	errno = EFAULT;
-	return -1;
+	FIXME_STUB(EFAULT, -1);
 }
 
 int socketpair(int domain, int type, int protocol, int sv[2])
