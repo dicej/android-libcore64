@@ -6,17 +6,9 @@
 
 #ifdef __PROVIDE_FIXMES
 #define FIXME_STUB(newErrno, returnCode) \
-    { \
-        printf("!FIXME! %s:%d (%s) - errno = %d, rc = %d\n", __FILE__, __LINE__, __FUNCTION__, newErrno, returnCode); \
-        errno = newErrno; \
-        return returnCode; \
-    }
+	printf("!FIXME! %s:%d (%s) - errno = %d, rc = %d\n", __FILE__, __LINE__, __FUNCTION__, newErrno, returnCode)
 #else
-#define FIXME_STUB(newErrno, returnCode) \
-    { \
-        errno = newErrno; \
-        return returnCode; \
-    }
+#define FIXME_STUB(newErrno, returnCode)
 #endif
 
 // including Winsock2.h unconditionally as it has to be included before windows.h
