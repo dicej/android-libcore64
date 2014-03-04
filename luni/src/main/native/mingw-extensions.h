@@ -290,6 +290,8 @@ enum sock_shutdown_cmd {
 #define TEMP_FAILURE_RETRY(exp) (exp)
 #endif
 
+#define IF_NAMESIZE				256
+
 typedef unsigned int uid_t;
 typedef unsigned int gid_t;
 typedef long loff_t;

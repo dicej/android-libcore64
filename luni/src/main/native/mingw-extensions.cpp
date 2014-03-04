@@ -68,6 +68,7 @@ int getpwnam_r(const char *name, struct passwd *pwd,
 	return 0;
 }
 
+#pragma GCC diagnostic ignored "-Wwrite-strings"
 int getpwuid_r(uid_t /*uid*/, struct passwd *pwd,
             char *buf, size_t buflen, struct passwd **result)
 {
@@ -95,6 +96,7 @@ int getpwuid_r(uid_t /*uid*/, struct passwd *pwd,
 	}
 	
 }
+#pragma GCC diagnostic pop
 
 // chown
 int chown(const char *path, uid_t owner, gid_t group)
@@ -637,79 +639,87 @@ int fstatfs (int fd, struct statfs *buf)
 	return -1;
 }
 
-int __statfs (const char *path, struct statfs *buf)
-  {
-    HINSTANCE h;
-    FARPROC f;
-    int retval = 0;
-    char tmp [MAX_PATH], resolved_path [MAX_PATH];
-    realpath(path, resolved_path);
-    if (!resolved_path)
-      retval = - 1;
-    else
-      {
-        /* check whether GetDiskFreeSpaceExA is supported */
-        h = LoadLibraryA ("kernel32.dll");
-        if (h)
-          f = GetProcAddress (h, "GetDiskFreeSpaceExA");
-        else
-          f = NULL;
-        if (f)
-          {
-            ULARGE_INTEGER bytes_free, bytes_total, bytes_free2;
-            if (!GetDiskFreeSpaceExA (resolved_path, &bytes_free2, &bytes_total, &bytes_free))
-              {
-                errno = ENOENT;
-                retval = - 1;
-              }
-            else
-              {
-                buf -> f_bsize = FAKED_BLOCK_SIZE;
-                buf -> f_bfree = (bytes_free.QuadPart) / FAKED_BLOCK_SIZE;
-                buf -> f_files = buf -> f_blocks = (bytes_total.QuadPart) / FAKED_BLOCK_SIZE;
-                buf -> f_ffree = buf -> f_bavail = (bytes_free2.QuadPart) / FAKED_BLOCK_SIZE;
-              }
-          }
-        else
-          {
-            DWORD sectors_per_cluster, bytes_per_sector;
-            if (h) FreeLibrary (h);
-            if (!GetDiskFreeSpaceA (resolved_path, (LPDWORD)&sectors_per_cluster,
-                   (LPDWORD)&bytes_per_sector, (LPDWORD)&buf -> f_bavail, (LPDWORD)&buf -> f_blocks))
-              {
-                errno = ENOENT;
-                retval = - 1;
-              }
-            else
-              {
-                buf -> f_bsize = sectors_per_cluster * bytes_per_sector;
-                buf -> f_files = buf -> f_blocks;
-                buf -> f_ffree = buf -> f_bavail;
-                buf -> f_bfree = buf -> f_bavail;
-              }
-          }
-        if (h) FreeLibrary (h);
-      }
+int statfs(const char *path, struct statfs *buf)
+{
+	HINSTANCE h;
+	FARPROC f;
+	int retval = 0;
+	char tmp[MAX_PATH], resolved_path[MAX_PATH];
+	realpath(path, resolved_path);
+	if (!resolved_path)
+		retval = -1;
+	else
+	{
+		/* check whether GetDiskFreeSpaceExA is supported */
+		h = LoadLibraryA("kernel32.dll");
+		if (h)
+			f = GetProcAddress(h, "GetDiskFreeSpaceExA");
+		else
+			f = NULL;
+		if (f)
+		{
+			ULARGE_INTEGER bytes_free, bytes_total, bytes_free2;
+			if (!GetDiskFreeSpaceExA(resolved_path, &bytes_free2, &bytes_total,
+					&bytes_free))
+			{
+				errno = ENOENT;
+				retval = -1;
+			}
+			else
+			{
+				buf->f_bsize = FAKED_BLOCK_SIZE;
+				buf->f_bfree = (bytes_free.QuadPart) / FAKED_BLOCK_SIZE;
+				buf->f_files = buf->f_blocks = (bytes_total.QuadPart)
+						/ FAKED_BLOCK_SIZE;
+				buf->f_ffree = buf->f_bavail = (bytes_free2.QuadPart)
+						/ FAKED_BLOCK_SIZE;
+			}
+		}
+		else
+		{
+			DWORD sectors_per_cluster, bytes_per_sector;
+			if (h)
+				FreeLibrary(h);
+			if (!GetDiskFreeSpaceA(resolved_path,
+					(LPDWORD) &sectors_per_cluster, (LPDWORD) &bytes_per_sector,
+					(LPDWORD) &buf->f_bavail, (LPDWORD) &buf->f_blocks))
+			{
+				errno = ENOENT;
+				retval = -1;
+			}
+			else
+			{
+				buf->f_bsize = sectors_per_cluster * bytes_per_sector;
+				buf->f_files = buf->f_blocks;
+				buf->f_ffree = buf->f_bavail;
+				buf->f_bfree = buf->f_bavail;
+			}
+		}
+		if (h)
+			FreeLibrary(h);
+	}
 
-    /* get the FS volume information */
-    if (strspn (":", resolved_path) > 0) resolved_path [3] = '\0'; /* we want only the root */    
-    if (GetVolumeInformation (resolved_path, NULL, 0, (LPDWORD)&buf -> f_fsid, (LPDWORD)&buf -> f_namelen, NULL, tmp, MAX_PATH))
-     {
-     	if (strcasecmp ("NTFS", tmp) == 0)
-     	 {
-     	   buf -> f_type = NTFS_SUPER_MAGIC;
-     	 }
-     	else
-     	 {
-     	   buf -> f_type = MSDOS_SUPER_MAGIC;
-     	 }
-     }
-    else
-     {
-       errno = ENOENT;
-       retval = - 1;
-     }
-    return retval;
+	/* get the FS volume information */
+	if (strspn(":", resolved_path) > 0)
+		resolved_path[3] = '\0'; /* we want only the root */
+	if (GetVolumeInformation(resolved_path, NULL, 0, (LPDWORD) &buf->f_fsid,
+			(LPDWORD) &buf->f_namelen, NULL, tmp, MAX_PATH))
+	{
+		if (strcasecmp("NTFS", tmp) == 0)
+		{
+			buf->f_type = NTFS_SUPER_MAGIC;
+		}
+		else
+		{
+			buf->f_type = MSDOS_SUPER_MAGIC;
+		}
+	}
+	else
+	{
+		errno = ENOENT;
+		retval = -1;
+	}
+	return retval;
 }
 
 int vasprintf(char **strp, const char *fmt, va_list args)
@@ -1116,10 +1126,12 @@ int tcdrain(int fd)
 
 // signals
 
+#pragma GCC diagnostic ignored "-Wwrite-strings"
 char *strsignal(int sig)
 {
 	return "No signals in Windows!";
 }
+#pragma GCC diagnostic pop
 
 // symlink
 
