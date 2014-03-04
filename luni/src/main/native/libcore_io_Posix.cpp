@@ -16,10 +16,6 @@
 
 #define LOG_TAG "Posix"
 
-#if defined(__MINGW32__) || defined(__MINGW64__)
-#include "mingw-extensions.h"
-#endif
-
 
 #include "AsynchronousSocketCloseMonitor.h"
 #include "ExecStrings.h"
@@ -56,6 +52,7 @@
 
 #include <ws2tcpip.h>
 #include <winsock2.h>
+#include "mingw-extensions.h"
 
 #endif
 
@@ -543,12 +540,9 @@ static void Posix_close(JNIEnv* env, jobject, jobject javaFd) {
     // http://lkml.indiana.edu/hypermail/linux/kernel/0509.1/0877.html
     throwIfMinusOne(env, "close", close(fd));
 #else
-    if (is_socket(fd)) {
-        throwIfMinusOne(env, "closesocket", closesocket(fd));
-    } else {
-        throwIfMinusOne(env, "close", close(fd));
-    }
-
+    // In Windows we have a special closing function cause file descriptors and
+    // socket descriptors are handled differently
+    throwIfMinusOne(env, "mingw_close", mingw_close(fd));
 #endif
 }
 
@@ -1158,16 +1152,12 @@ static jint Posix_readBytes(JNIEnv* env, jobject, jobject javaFd, jobject javaBy
 }
 
 static jint Posix_readv(JNIEnv* env, jobject, jobject javaFd, jobjectArray buffers, jintArray offsets, jintArray byteCounts) {
-#if !defined(__MINGW32__) && !defined(__MINGW64__)
     IoVec<ScopedBytesRW> ioVec(env, env->GetArrayLength(buffers));
     if (!ioVec.init(buffers, offsets, byteCounts)) {
         return -1;
     }
     int fd = jniGetFDFromFileDescriptor(env, javaFd);
     return throwIfMinusOne(env, "readv", TEMP_FAILURE_RETRY(readv(fd, ioVec.get(), ioVec.size())));
-#else
-    throwErrnoExceptionWithCode(env, ENOTSUP, "readv support on Windows not implemented");
-#endif
 }
 
 static jint Posix_recvfromBytes(JNIEnv* env, jobject, jobject javaFd, jobject javaBytes, jint byteOffset, jint byteCount, jint flags, jobject javaInetSocketAddress) {
@@ -1293,7 +1283,7 @@ static void Posix_setsockoptIfreq(JNIEnv* env, jobject, jobject javaFd, jint lev
     int fd = jniGetFDFromFileDescriptor(env, javaFd);
     throwIfMinusOne(env, "setsockopt", TEMP_FAILURE_RETRY(setsockopt(fd, level, option, &req, sizeof(req))));
 #else
-	// TODO Implement this on windows
+    throwErrnoExceptionWithCode(env, ENOTSUP, "setsockopt with ifreq not implmented");
 #endif
 }
 
@@ -1315,7 +1305,7 @@ static void Posix_setsockoptIpMreqn(JNIEnv* env, jobject, jobject javaFd, jint l
     int fd = jniGetFDFromFileDescriptor(env, javaFd);
     throwIfMinusOne(env, "setsockopt", TEMP_FAILURE_RETRY(setsockopt(fd, level, option, &req, sizeof(req))));
 #else
-	// TODO How to do this in Windows?
+    throwErrnoExceptionWithCode(env, ENOTSUP, "setsockopt with ip mreqn not implmented");
 #endif
 }
 
@@ -1440,7 +1430,6 @@ static jstring Posix_strsignal(JNIEnv* env, jobject, jint signal) {
 }
 
 static void Posix_symlink(JNIEnv* env, jobject, jstring javaOldPath, jstring javaNewPath) {
-#if !defined(__MINGW32__) && !defined(__MINGW64__)
     ScopedUtfChars oldPath(env, javaOldPath);
     if (oldPath.c_str() == NULL) {
         return;
@@ -1450,9 +1439,6 @@ static void Posix_symlink(JNIEnv* env, jobject, jstring javaOldPath, jstring jav
         return;
     }
     throwIfMinusOne(env, "symlink", TEMP_FAILURE_RETRY(symlink(oldPath.c_str(), newPath.c_str())));
-#else
-    throwErrnoExceptionWithCode(env, ENOTSUP, "symlink support on Windows not implemented");
-#endif
 }
 
 static jlong Posix_sysconf(JNIEnv* env, jobject, jint name) {
@@ -1515,16 +1501,12 @@ static jint Posix_writeBytes(JNIEnv* env, jobject, jobject javaFd, jbyteArray ja
 }
 
 static jint Posix_writev(JNIEnv* env, jobject, jobject javaFd, jobjectArray buffers, jintArray offsets, jintArray byteCounts) {
-#if !defined(__MINGW32__) && !defined(__MINGW64__)
     IoVec<ScopedBytesRO> ioVec(env, env->GetArrayLength(buffers));
     if (!ioVec.init(buffers, offsets, byteCounts)) {
         return -1;
     }
     int fd = jniGetFDFromFileDescriptor(env, javaFd);
     return throwIfMinusOne(env, "writev", TEMP_FAILURE_RETRY(writev(fd, ioVec.get(), ioVec.size())));
-#else
-    throwErrnoExceptionWithCode(env, ENOTSUP, "writev support on Windows not implemented");
-#endif
 }
 
 static JNINativeMethod gMethods[] = {
