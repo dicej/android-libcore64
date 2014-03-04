@@ -56,11 +56,6 @@ static void initConstant(JNIEnv* env, jclass c, const char* fieldName, int value
 }
 
 static void OsConstants_initConstants(JNIEnv* env, jclass c) {
-#ifdef __DISABLE_IPV6_PROTO
-	initConstant(env, c, "AF_INET_DEFAULT", AF_INET);
-#else
-	initConstant(env, c, "AF_INET_DEFAULT", AF_INET6);
-#endif
     initConstant(env, c, "AF_INET", AF_INET);
     initConstant(env, c, "AF_INET6", AF_INET6);
     initConstant(env, c, "AF_UNIX", AF_UNIX);
