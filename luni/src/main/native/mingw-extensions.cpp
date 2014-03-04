@@ -17,10 +17,10 @@
 // suspect Posix I/O, just turn this definition on
 
 #ifdef __PROVIDE_FIXMES
-#define FIXME_STUB(newErrno, returnCode) \
-	fprintf(stderr, "FIXME %s:%d (%s) - errno = %d, rc = %d\n", __FILE__, __LINE__, __FUNCTION__, newErrno, returnCode);
+#define FIXME_STUB(newErrno, message) \
+	fprintf(stderr, "FIXME %s:%d (%s) - errno = %d, %s\n", __FILE__, __LINE__, __FUNCTION__, newErrno, message);
 #else
-#define FIXME_STUB(newErrno, returnCode)
+#define FIXME_STUB(newErrno, message)
 #endif
 
 #define FAKED_BLOCK_SIZE		512
@@ -917,9 +917,8 @@ int poll(struct pollfd *fds, nfds_t nfds, int timeout)
 	}
 	for (nfds_t i = 0; i < nfds; i++) {
 		if (!is_socket(fds[i].fd)) {
-			// we don't know how to poll() other descriptors than socket yet, so stub
-			FIXME_STUB(EBADF, -1);
 			errno = EBADF;
+			FIXME_STUB(errno, "the function supports only socket descriptors so far");
 			return -1;
 		}
 	}
@@ -969,7 +968,7 @@ int socketpair(int domain, int type, int protocol, int sv[2])
 	if (domain != AF_INET && domain != AF_INET6)
 	{
 		errno = EOPNOTSUPP;
-
+		FIXME_STUB(errno, "the only supported protocols are AF_INET and AF_INET6");
 		return -1;
 	}
 
@@ -1100,6 +1099,7 @@ ssize_t pwrite64(int fd, const void *buf, size_t count, off_t offset)
 ssize_t sendfile(int out_fd, int in_fd, off_t * offset, size_t count)
 {
 	errno = EINVAL;
+	FIXME_STUB(errno, "this function isn't implemented");
 	return -1;
 }
 
@@ -1107,6 +1107,7 @@ pid_t waitpid(pid_t pid, int *status, int options)
 {
 	// TODO Use GetExitCodeProcess here
 	errno = EINVAL;
+	FIXME_STUB(errno, "this function isn't implemented");
 	return -1;
 }
 
@@ -1126,18 +1127,18 @@ int tcdrain(int fd)
 
 // signals
 
-#pragma GCC diagnostic ignored "-Wwrite-strings"
 char *strsignal(int sig)
 {
-	return "No signals in Windows!";
+	FIXME_STUB(0, "this function isn't implemented");
+	return NULL;
 }
-#pragma GCC diagnostic pop
 
 // symlink
 
 int symlink(const char *path1, const char *path2)
 {
 	errno = EACCES;
+	FIXME_STUB(0, "this function isn't implemented");
 	return -1;
 }
 
@@ -1163,12 +1164,14 @@ extern "C" {
 ssize_t readv(int fd, struct iovec *iov, int iovcnt)
 {
 	errno = ENOTSUP;
+	FIXME_STUB(errno, "this function isn't implemented");
 	return -1;
 }
 
 ssize_t writev(int fd, struct iovec *iov, int iovcnt)
 {
 	errno = ENOTSUP;
+	FIXME_STUB(errno, "this function isn't implemented");
 	return -1;
 }
 

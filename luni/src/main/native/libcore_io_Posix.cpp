@@ -1283,7 +1283,7 @@ static void Posix_setsockoptIfreq(JNIEnv* env, jobject, jobject javaFd, jint lev
     int fd = jniGetFDFromFileDescriptor(env, javaFd);
     throwIfMinusOne(env, "setsockopt", TEMP_FAILURE_RETRY(setsockopt(fd, level, option, &req, sizeof(req))));
 #else
-    throwErrnoExceptionWithCode(env, ENOTSUP, "setsockopt with ifreq not implmented");
+    throwErrnoExceptionWithCode(env, ENOTSUP, "setsockopt with ifreq not implemented");
 #endif
 }
 
@@ -1305,7 +1305,7 @@ static void Posix_setsockoptIpMreqn(JNIEnv* env, jobject, jobject javaFd, jint l
     int fd = jniGetFDFromFileDescriptor(env, javaFd);
     throwIfMinusOne(env, "setsockopt", TEMP_FAILURE_RETRY(setsockopt(fd, level, option, &req, sizeof(req))));
 #else
-    throwErrnoExceptionWithCode(env, ENOTSUP, "setsockopt with ip mreqn not implmented");
+    throwErrnoExceptionWithCode(env, ENOTSUP, "setsockopt with ip mreqn not implemented");
 #endif
 }
 
