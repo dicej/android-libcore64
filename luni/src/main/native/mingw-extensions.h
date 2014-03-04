@@ -535,6 +535,13 @@ char *strsignal(int sig);
 // default close() function in Windows doesn't close everything)
 int mingw_close(int fd);
 
+/* This emulates POSIX socket(); Windows has native implementation that works,
+ * but we want more tricky implementation than that (differs on Windows version):
+ * for WinXP / WinServer2003 create sockets with AF_INET even if AF_INET6 was requested
+ * for newer OSes set IPV6_V6ONLY to "false" for AF_INET6 sockets */
+SOCKET mingw_socket(int af, int type, int protocol);
+
+
 // Converts Windows API error code into errno code
 int windowsErrorToErrno(DWORD winErr);
 

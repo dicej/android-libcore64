@@ -1155,6 +1155,22 @@ int mingw_close(int fd)
 
 }
 
+SOCKET mingw_socket(int af, int type, int protocol) {
+	static int is_old_windows = 0;
+	if (af != AF_INET6) {
+		// for non-IPv6 addresses use normal function
+		return socket(af, type, protocol);
+	}
+	if (is_old_windows == 0) {
+		// we don't know yet if this Windows version is ancient, so we check it
+		;
+	}
+	if (is_old_windows > 0) {
+		// force IPv4 socket regardless of what was requested
+		fprintf(stderr, "Warning! Old Windows version detected, forcing IPv4 socket!\n");
+		return socket(AF_INET, type, protocol);
+	}
+}
 
 #ifdef __cplusplus
 extern "C" {
