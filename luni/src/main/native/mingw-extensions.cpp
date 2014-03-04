@@ -1164,13 +1164,35 @@ SOCKET mingw_socket(int af, int type, int protocol) {
 	}
 	if (is_old_windows == 0) {
 		// we don't know yet if this Windows version is ancient, so we check it
-		;
+	    DWORD dwVersion = GetVersion();
+	    DWORD dwMajorVersion = (DWORD)(LOBYTE(LOWORD(dwVersion)));
+
+	    is_old_windows = (dwMajorVersion >= 6)?-1:1;
 	}
 	if (is_old_windows > 0) {
 		// force IPv4 socket regardless of what was requested
+		// TODO: think if this fprintf() needs to be under "#ifdef __PROVIDE_FIXMES"
 		fprintf(stderr, "Warning! Old Windows version detected, forcing IPv4 socket!\n");
 		return socket(AF_INET, type, protocol);
 	}
+	// if we got here it means we're on Vista or newer, create the socket
+	// and set IPV6_V6ONLY to "false" on it
+	SOCKET result = socket(af, type, protocol);
+	if (result == INVALID_SOCKET) {
+		return INVALID_SOCKET;
+	}
+	static DWORD ipv6only = 0;
+	if (setsockopt(result, IPPROTO_IPV6, IPV6_V6ONLY,
+			(const char*)&ipv6only, sizeof(ipv6only)) == SOCKET_ERROR) {
+		// cannot set the option; close the socket and signal that it's invalid
+		int lastError = WSAGetLastError(); // save the error code
+		if (closesocket(result) != SOCKET_ERROR) {
+			// closed the socket normally... now set the error to setsockopt() error
+			WSASetLastError(lastError);
+		}
+		return INVALID_SOCKET;
+	}
+	return result;
 }
 
 #ifdef __cplusplus

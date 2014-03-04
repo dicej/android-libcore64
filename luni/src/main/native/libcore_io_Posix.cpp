@@ -124,7 +124,7 @@ struct addrinfo_deleter {
         AsynchronousSocketCloseMonitor _monitor(_fd); \
         _rc = syscall_name(_fd, __VA_ARGS__); \
     } \
-    if (_rc == SOCKET_ERROR) { \
+    if (_rc == SOCKET_ERROR || _rc == INVALID_SOCKET) { \
         int lastError = WSAGetLastError(); \
         errno = windowsErrorToErrno(lastError); \
         switch (lastError) { \
@@ -1388,7 +1388,11 @@ static void Posix_shutdown(JNIEnv* env, jobject, jobject javaFd, jint how) {
 }
 
 static jobject Posix_socket(JNIEnv* env, jobject, jint domain, jint type, jint protocol) {
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
     int fd = throwIfMinusOne(env, "socket", TEMP_FAILURE_RETRY(socket(domain, type, protocol)));
+#else
+    int fd = throwIfMinusOne(env, "socket", TEMP_FAILURE_RETRY(mingw_socket(domain, type, protocol)));
+#endif
     return fd != -1 ? jniCreateFileDescriptor(env, fd) : NULL;
 }
 
