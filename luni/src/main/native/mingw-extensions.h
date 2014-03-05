@@ -346,7 +346,7 @@ int munlock(const void *addr, size_t len);
 
 // unistd.h
 
-int pipe(int* pipefd);
+int pipe(int pipefd[2]);
 int fdatasync(int fd);
 int fsync(int fd);
 gid_t getgid();

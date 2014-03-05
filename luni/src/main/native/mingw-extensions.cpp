@@ -18,7 +18,7 @@
 
 #ifdef __PROVIDE_FIXMES
 #define FIXME_STUB(newErrno, message) \
-	fprintf(stderr, "FIXME %s:%d (%s) - errno = %d, %s\n", __FILE__, __LINE__, __FUNCTION__, newErrno, message);
+	fprintf(stderr, "FIXME %s:%d (%s) - errno = %d, %s\n", __FILE__, __LINE__, __FUNCTION__, newErrno, message);fflush(stderr);
 #else
 #define FIXME_STUB(newErrno, message)
 #endif
@@ -281,7 +281,7 @@ int munlock(const void *addr, size_t len)
 }
 
 // pipe
-int pipe(int* pipefd)
+int pipe(int pipefd[2])
 {
 	return socketpair(AF_INET, SOCK_STREAM, IPPROTO_TCP, pipefd);
 }
@@ -961,9 +961,9 @@ int socketpair(int domain, int type, int protocol, int sv[2])
 	socklen_t addr_len = sizeof(struct sockaddr_storage);
 	struct addrinfo hints, *res;
 	int getaddrinfo_r;
-	int serverfd;
+	SOCKET serverfd;
 	int saved_errno;
-	int insock, outsock;
+	SOCKET insock, outsock;
 
 	/* filter out protocol */
 	if (domain != AF_INET && domain != AF_INET6)
@@ -988,7 +988,7 @@ int socketpair(int domain, int type, int protocol, int sv[2])
 
 	// Creating server socket
 	serverfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-	if (serverfd == SOCKET_ERROR)
+	if (serverfd == INVALID_SOCKET)
 	{
 		goto error_bind_fail;
 	}
@@ -1013,7 +1013,7 @@ int socketpair(int domain, int type, int protocol, int sv[2])
 
 	// Creating output socket
 	outsock = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-	if (outsock == SOCKET_ERROR)
+	if (outsock == INVALID_SOCKET)
 	{
 		goto error_close_serverfd;
 	}
@@ -1040,7 +1040,7 @@ int socketpair(int domain, int type, int protocol, int sv[2])
 	if (type != SOCK_DGRAM)
 	{
 		insock = accept(serverfd, NULL, NULL);
-		if (insock == SOCKET_ERROR)
+		if (insock == INVALID_SOCKET)
 		{
 			goto error_close_insock;
 		}
