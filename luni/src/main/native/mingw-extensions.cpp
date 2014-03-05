@@ -917,7 +917,7 @@ int poll(struct pollfd *fds, nfds_t nfds, int timeout)
 		return -1;
 	}
 	for (nfds_t i = 0; i < nfds; i++) {
-		if (!is_socket(fds[i].fd)) {
+		if (fds[i].fd >= 0 && !is_socket(fds[i].fd)) {
 			errno = EBADF;
 			FIXME_STUB(errno, "the function supports only socket descriptors so far");
 			return -1;
@@ -1154,7 +1154,6 @@ int mingw_close(int fd)
 	}
 
 	if (is_socket(fd)) {
-		shutdown(fd, SD_BOTH);
         return closesocket(fd);
     } else {
     	return close(fd);

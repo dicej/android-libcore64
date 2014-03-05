@@ -482,7 +482,6 @@ static jobject Posix_accept(JNIEnv* env, jobject, jobject javaFd, jobject javaIn
     	clientFd = -1;
     }
 #endif
-    printf("accept: clientfd=%d\n", clientFd); fflush(stdout);
 
     if (clientFd == -1 || !fillInetSocketAddress(env, clientFd, javaInetSocketAddress, ss)) {
 #if !defined(__MINGW32__) && !defined(__MINGW64__)
@@ -1064,7 +1063,6 @@ static jobject Posix_open(JNIEnv* env, jobject, jstring javaPath, jint flags, ji
 static jobjectArray Posix_pipe(JNIEnv* env, jobject) {
     int fds[2];
     throwIfMinusOne(env, "pipe", TEMP_FAILURE_RETRY(pipe(&fds[0])));
-    printf("pipe: [%d, %d]\n", fds[0], fds[1]); fflush(stdout);
     jobjectArray result = env->NewObjectArray(2, JniConstants::fileDescriptorClass, NULL);
     if (result == NULL) {
         return NULL;
@@ -1401,7 +1399,6 @@ static jobject Posix_socket(JNIEnv* env, jobject, jint domain, jint type, jint p
     return fd != -1 ? jniCreateFileDescriptor(env, fd) : NULL;
 #else
     SOCKET fd = mingw_socket(domain, type, protocol);
-	printf("socket: %d\n", fd); fflush(stdout);
     if (fd == INVALID_SOCKET)
     {
     	throwErrnoException(env, "socket");
