@@ -470,9 +470,26 @@ static jobject Posix_accept(JNIEnv* env, jobject, jobject javaFd, jobject javaIn
     memset(&ss, 0, sizeof(ss));
     sockaddr* peer = (javaInetSocketAddress != NULL) ? reinterpret_cast<sockaddr*>(&ss) : NULL;
     socklen_t* peerLength = (javaInetSocketAddress != NULL) ? &sl : 0;
-    jint clientFd = NET_FAILURE_RETRY(env, int, accept, javaFd, peer, peerLength);
+
+    jint clientFd;
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
+    clientFd = NET_FAILURE_RETRY(env, int, accept, javaFd, peer, peerLength);
+#else
+    SOCKET acceptSock = NET_FAILURE_RETRY(env, SOCKET, accept, javaFd, peer, peerLength);
+    if (acceptSock != INVALID_SOCKET) {
+    	clientFd = acceptSock;
+    } else {
+    	clientFd = -1;
+    }
+#endif
+    printf("accept: clientfd=%d\n", clientFd); fflush(stdout);
+
     if (clientFd == -1 || !fillInetSocketAddress(env, clientFd, javaInetSocketAddress, ss)) {
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
         close(clientFd);
+#else
+        mingw_close(clientFd);
+#endif
         return NULL;
     }
     return (clientFd != -1) ? jniCreateFileDescriptor(env, clientFd) : NULL;
@@ -532,7 +549,7 @@ static void Posix_close(JNIEnv* env, jobject, jobject javaFd) {
 #else
     // In Windows we have a special closing function cause file descriptors and
     // socket descriptors are handled differently
-    throwIfMinusOne(env, "mingw_close", mingw_close(fd));
+    throwIfMinusOne(env, "close", mingw_close(fd));
 #endif
 }
 
@@ -1047,6 +1064,7 @@ static jobject Posix_open(JNIEnv* env, jobject, jstring javaPath, jint flags, ji
 static jobjectArray Posix_pipe(JNIEnv* env, jobject) {
     int fds[2];
     throwIfMinusOne(env, "pipe", TEMP_FAILURE_RETRY(pipe(&fds[0])));
+    printf("pipe: [%d, %d]\n", fds[0], fds[1]); fflush(stdout);
     jobjectArray result = env->NewObjectArray(2, JniConstants::fileDescriptorClass, NULL);
     if (result == NULL) {
         return NULL;
@@ -1380,10 +1398,18 @@ static void Posix_shutdown(JNIEnv* env, jobject, jobject javaFd, jint how) {
 static jobject Posix_socket(JNIEnv* env, jobject, jint domain, jint type, jint protocol) {
 #if !defined(__MINGW32__) && !defined(__MINGW64__)
     int fd = throwIfMinusOne(env, "socket", TEMP_FAILURE_RETRY(socket(domain, type, protocol)));
-#else
-    int fd = throwIfMinusOne(env, "socket", TEMP_FAILURE_RETRY(mingw_socket(domain, type, protocol)));
-#endif
     return fd != -1 ? jniCreateFileDescriptor(env, fd) : NULL;
+#else
+    SOCKET fd = mingw_socket(domain, type, protocol);
+	printf("socket: %d\n", fd); fflush(stdout);
+    if (fd == INVALID_SOCKET)
+    {
+    	throwErrnoException(env, "socket");
+    	return NULL;
+    } else {
+    	return jniCreateFileDescriptor(env, fd);
+    }
+#endif
 }
 
 static void Posix_socketpair(JNIEnv* env, jobject, jint domain, jint type, jint protocol, jobject javaFd1, jobject javaFd2) {
