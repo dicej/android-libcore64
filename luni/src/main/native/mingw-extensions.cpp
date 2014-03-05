@@ -1154,7 +1154,6 @@ int mingw_close(int fd)
 	}
 
 	if (is_socket(fd)) {
-		shutdown(fd, SD_BOTH);
         return closesocket(fd);
     } else {
     	return close(fd);
