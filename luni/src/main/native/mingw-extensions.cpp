@@ -449,6 +449,7 @@ int ioctl(int fd, int request, void *argp)
 		return 0;
 	} else {
 		errno = EBADF;
+		FIXME_STUB(errno, "the function supports only socket descriptors so far");
 		return -1;
 	}
 }
@@ -985,10 +986,11 @@ int socketpair(int domain, int type, int protocol, int sv[2])
 		goto error_exit;
 	}
 
+	// Creating server socket
 	serverfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
 	if (serverfd == SOCKET_ERROR)
 	{
-		goto out_bind_fail;
+		goto error_bind_fail;
 	}
 
 	if (bind(serverfd, res->ai_addr, res->ai_addrlen) == SOCKET_ERROR)
@@ -1009,6 +1011,7 @@ int socketpair(int domain, int type, int protocol, int sv[2])
 		}
 	}
 
+	// Creating output socket
 	outsock = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
 	if (outsock == SOCKET_ERROR)
 	{
@@ -1027,11 +1030,13 @@ int socketpair(int domain, int type, int protocol, int sv[2])
 		}
 	}
 
+	// Connecting output socket to server socket
 	if (connect(outsock, (struct sockaddr *) &serverfd_addr, addr_len) == SOCKET_ERROR)
 	{
 		goto error_close_outsock;
 	}
 
+	// Accepting connection - creating input socket
 	if (type != SOCK_DGRAM)
 	{
 		insock = accept(serverfd, NULL, NULL);
@@ -1040,7 +1045,7 @@ int socketpair(int domain, int type, int protocol, int sv[2])
 			goto error_close_insock;
 		}
 		// Closing the server socket
-		close(serverfd);
+		closesocket(serverfd);
 	}
 	else
 	{
@@ -1058,12 +1063,12 @@ int socketpair(int domain, int type, int protocol, int sv[2])
 
 	// Error cases
 error_close_insock:
-	closesocket(outsock);
-error_close_outsock:
 	closesocket(insock);
+error_close_outsock:
+	closesocket(outsock);
 error_close_serverfd:
-	close(serverfd);
-out_bind_fail:
+	closesocket(serverfd);
+error_bind_fail:
 	freeaddrinfo(res);
 error_exit:
 	errno = windowsErrorToErrno(WSAGetLastError());
@@ -1149,6 +1154,7 @@ int mingw_close(int fd)
 	}
 
 	if (is_socket(fd)) {
+		shutdown(fd, SD_BOTH);
         return closesocket(fd);
     } else {
     	return close(fd);
