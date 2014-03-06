@@ -1295,7 +1295,11 @@ static void Posix_setsockoptIfreq(JNIEnv* env, jobject, jobject javaFd, jint lev
 
 static void Posix_setsockoptInt(JNIEnv* env, jobject, jobject javaFd, jint level, jint option, jint value) {
     int fd = jniGetFDFromFileDescriptor(env, javaFd);
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
+    throwIfMinusOne(env, "setsockopt", TEMP_FAILURE_RETRY(setsockopt(fd, level, option, &value, sizeof(value))));
+#else
     throwIfMinusOne(env, "setsockopt", TEMP_FAILURE_RETRY(setsockopt(fd, level, option, (char*)&value, sizeof(value))));
+#endif
 }
 
 #if defined(__APPLE__) && MAC_OS_X_VERSION_MAX_ALLOWED < 1070
