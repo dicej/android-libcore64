@@ -39,7 +39,7 @@
 	printf("FIXME %s:%d: function %s returned error. Cause: %s\nIf you want to ignore messages of this kind, unset the build flag __PROVIDE_FIXMES\n", __FILE__, __LINE__, __FUNCTION__, message);
 #else
 #define FIXME_STUB_ERRNO(newErrno, message)
-#define FIXME_STUB(newErrno, message)
+#define FIXME_STUB(message)
 #endif
 
 #define FAKED_BLOCK_SIZE		512
