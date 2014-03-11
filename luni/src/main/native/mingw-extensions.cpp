@@ -672,6 +672,13 @@ int inet_pton(int af, const char *src, void *dst)
     }
 }
 
+const char *inet_ntop(int af, const void *src, char *dst, size_t cnt)
+{
+    errno = EAFNOSUPPORT;
+	FIXME_STUB_ERRNO(errno, "this function isn't supported yet");
+    return NULL;
+}
+
 int fstatfs (int fd, struct statfs *buf)
 {
 	errno = EINVAL;

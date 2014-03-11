@@ -510,6 +510,7 @@ char *if_indextoname(unsigned int ifindex, char *ifname);
 
 int inet_pton(int af, const char *src, void *dst);
 
+const char *inet_ntop(int af, const void *src, char *dst, size_t cnt);
 // stdlib.h
 
 #define unsetenv(pname) SetEnvironmentVariable(pname, NULL)
