@@ -33,12 +33,12 @@
 // suspect Posix I/O, just turn this definition on
 
 #ifdef __PROVIDE_FIXMES
-#define FIXME_STUB_ERRNO(newErrno, message) \
-	printf("FIXME %s:%d: function %s set errno = %d. Cause: %s\nIf you want to ignore messages of this kind, unset the build flag __PROVIDE_FIXMES\n", __FILE__, __LINE__, __FUNCTION__, newErrno, message);
+#define FIXME_STUB_ERRNO(message) \
+	printf("FIXME %s:%d: function %s set errno = %d. Cause: %s\nIf you want to ignore messages of this kind, unset the build flag __PROVIDE_FIXMES\n", __FILE__, __LINE__, __FUNCTION__, errno, message);
 #define FIXME_STUB(message) \
 	printf("FIXME %s:%d: function %s returned error. Cause: %s\nIf you want to ignore messages of this kind, unset the build flag __PROVIDE_FIXMES\n", __FILE__, __LINE__, __FUNCTION__, message);
 #else
-#define FIXME_STUB_ERRNO(newErrno, message)
+#define FIXME_STUB_ERRNO(message)
 #define FIXME_STUB(message)
 #endif
 
@@ -121,20 +121,20 @@ int getpwuid_r(uid_t /*uid*/, struct passwd *pwd,
 int chown(const char *path, uid_t owner, gid_t group)
 {
 	errno = EBADF;
-	FIXME_STUB_ERRNO(errno, "this function isn't supported yet");
+	FIXME_STUB_ERRNO("this function isn't supported yet");
 	return -1;
 }
 int lchown(const char *path, uid_t owner, gid_t group)
 {
 	errno = EBADF;
-	FIXME_STUB_ERRNO(errno, "this function isn't supported yet");
+	FIXME_STUB_ERRNO("this function isn't supported yet");
 	return -1;
 }
 
 int fchown(int fd, uid_t owner, gid_t group)
 {
 	errno = EBADF;
-	FIXME_STUB_ERRNO(errno, "this function isn't supported yet");
+	FIXME_STUB_ERRNO("this function isn't supported yet");
 	return -1;
 }
 
@@ -142,7 +142,7 @@ int fchown(int fd, uid_t owner, gid_t group)
 int mincore(void *addr, size_t length, unsigned char *vec)
 {
 	errno = EFAULT;
-	FIXME_STUB_ERRNO(errno, "this function isn't supported yet");
+	FIXME_STUB_ERRNO("this function isn't supported yet");
 	return -1;
 }
 
@@ -372,14 +372,14 @@ exit:
 int fdatasync(int fd)
 {
 	errno = EBADF;
-	FIXME_STUB_ERRNO(errno, "this function isn't supported yet");
+	FIXME_STUB_ERRNO("this function isn't supported yet");
 	return -1;
 }
 
 int fsync(int fd)
 {
 	errno = EBADF;
-	FIXME_STUB_ERRNO(errno, "this function isn't supported yet");
+	FIXME_STUB_ERRNO("this function isn't supported yet");
 	return -1;
 }
 
@@ -413,31 +413,31 @@ uid_t geteuid(void)
 int seteuid(uid_t euid)
 {
 	errno = EPERM;
-	FIXME_STUB_ERRNO(errno, "this function isn't supported yet");
+	FIXME_STUB_ERRNO("this function isn't supported yet");
 	return -1;
 }
 int setegid(gid_t egid)
 {
 	errno = EPERM;
-	FIXME_STUB_ERRNO(errno, "this function isn't supported yet");
+	FIXME_STUB_ERRNO("this function isn't supported yet");
 	return -1;
 }
 int setgid(gid_t gid)
 {
 	errno = EPERM;
-	FIXME_STUB_ERRNO(errno, "this function isn't supported yet");
+	FIXME_STUB_ERRNO("this function isn't supported yet");
 	return -1;
 }
 pid_t setsid(void)
 {
 	errno = EPERM;
-	FIXME_STUB_ERRNO(errno, "this function isn't supported yet");
+	FIXME_STUB_ERRNO("this function isn't supported yet");
 	return -1;
 }
 int setuid(uid_t euid)
 {
 	errno = EPERM;
-	FIXME_STUB_ERRNO(errno, "this function isn't supported yet");
+	FIXME_STUB_ERRNO("this function isn't supported yet");
 	return -1;
 }
 
@@ -446,7 +446,7 @@ int setuid(uid_t euid)
 int fchmod(int fd, mode_t mode)
 {
 	errno = EBADF;
-	FIXME_STUB_ERRNO(errno, "this function isn't supported yet");
+	FIXME_STUB_ERRNO("this function isn't supported yet");
 	return -1;
 }
 
@@ -485,7 +485,7 @@ int ioctl(int fd, int request, void *argp)
 		return 0;
 	} else {
 		errno = EBADF;
-		FIXME_STUB_ERRNO(errno, "the function supports only socket descriptors so far");
+		FIXME_STUB_ERRNO("the function supports only socket descriptors so far");
 		return -1;
 	}
 }
@@ -495,7 +495,7 @@ int ioctl(int fd, int request, void *argp)
 int kill(pid_t pid, int sig)
 {
 	errno = EPERM;
-	FIXME_STUB_ERRNO(errno, "this function isn't supported yet");
+	FIXME_STUB_ERRNO("this function isn't supported yet");
 	return -1;
 }
 
@@ -672,17 +672,40 @@ int inet_pton(int af, const char *src, void *dst)
     }
 }
 
-const char *inet_ntop(int af, const void *src, char *dst, size_t cnt)
-{
-    errno = EAFNOSUPPORT;
-	FIXME_STUB_ERRNO(errno, "this function isn't supported yet");
-    return NULL;
+const char *inet_ntop(int af, const void *src, char *dst, size_t cnt) {
+	int rc;
+	switch (af) {
+		case AF_INET: {
+				struct sockaddr_in in4;
+				memset(&in4, 0, sizeof(in4));
+				in4.sin_family = AF_INET;
+				memcpy(&in4.sin_addr, src, sizeof(struct in_addr));
+				rc = getnameinfo(reinterpret_cast<struct sockaddr*>(&in4), sizeof(struct sockaddr_in), dst, cnt, NULL, 0, NI_NUMERICHOST);
+			}
+			break;
+		case AF_INET6: {
+				struct sockaddr_in6 in6;
+				memset(&in6, 0, sizeof(in6));
+				in6.sin6_family = AF_INET6;
+				memcpy(&in6.sin6_addr, src, sizeof(struct in_addr6));
+				rc = getnameinfo(reinterpret_cast<struct sockaddr*>(&in6), sizeof(struct sockaddr_in6), dst, cnt, NULL, 0, NI_NUMERICHOST);
+			}
+			break;
+		default:
+			errno = ENOTSUP;
+			return NULL;
+	}
+	if (rc != 0) {
+		errno = windowsErrorToErrno(WSAGetLastError());
+		return NULL;
+	}
+	return dst;
 }
 
 int fstatfs (int fd, struct statfs *buf)
 {
 	errno = EINVAL;
-	FIXME_STUB_ERRNO(errno, "this function isn't supported yet");
+	FIXME_STUB_ERRNO("this function isn't supported yet");
 	return -1;
 }
 
@@ -813,7 +836,7 @@ int lstat(const char *path, struct stat *buf)
 {
 	// We don't support symbolic links in Windows
 	errno = EBADF;
-	FIXME_STUB_ERRNO(errno, "this function isn't supported yet");
+	FIXME_STUB_ERRNO("this function isn't supported yet");
 	return -1;
 }
 
@@ -826,7 +849,7 @@ int sysconf(int name)
 	case _SC_GETPW_R_SIZE_MAX: return 1024;		// TODO I have no idea what we should return here
 	default:
 		errno = EINVAL;
-		FIXME_STUB_ERRNO(errno, "this sysconf option isn't supported yet");
+		FIXME_STUB_ERRNO("this sysconf option isn't supported yet");
 		return -1;
 	}
 }
@@ -967,7 +990,7 @@ int poll(struct pollfd *fds, nfds_t nfds, int timeout)
 	for (nfds_t i = 0; i < nfds; i++) {
 		if (fds[i].fd >= 0 && !is_socket(fds[i].fd)) {
 			errno = EBADF;
-			FIXME_STUB_ERRNO(errno, "the function supports only socket descriptors so far");
+			FIXME_STUB_ERRNO("the function supports only socket descriptors so far");
 			return -1;
 		}
 	}
@@ -1017,7 +1040,7 @@ int socketpair(int domain, int type, int protocol, int sv[2])
 	if (domain != AF_INET && domain != AF_INET6)
 	{
 		errno = EOPNOTSUPP;
-		FIXME_STUB_ERRNO(errno, "the only supported protocols are AF_INET and AF_INET6");
+		FIXME_STUB_ERRNO("the only supported protocols are AF_INET and AF_INET6");
 		return -1;
 	}
 
@@ -1152,7 +1175,7 @@ ssize_t pwrite64(int fd, const void *buf, size_t count, off_t offset)
 ssize_t sendfile(int out_fd, int in_fd, off_t * offset, size_t count)
 {
 	errno = EINVAL;
-	FIXME_STUB_ERRNO(errno, "this function isn't implemented");
+	FIXME_STUB_ERRNO("this function isn't implemented");
 	return -1;
 }
 
@@ -1160,7 +1183,7 @@ pid_t waitpid(pid_t pid, int *status, int options)
 {
 	// TODO Use GetExitCodeProcess here
 	errno = EINVAL;
-	FIXME_STUB_ERRNO(errno, "this function isn't implemented");
+	FIXME_STUB_ERRNO("this function isn't implemented");
 	return -1;
 }
 
@@ -1255,14 +1278,14 @@ extern "C" {
 ssize_t readv(int fd, struct iovec *iov, int iovcnt)
 {
 	errno = ENOTSUP;
-	FIXME_STUB_ERRNO(errno, "this function isn't implemented");
+	FIXME_STUB_ERRNO("this function isn't implemented");
 	return -1;
 }
 
 ssize_t writev(int fd, struct iovec *iov, int iovcnt)
 {
 	errno = ENOTSUP;
-	FIXME_STUB_ERRNO(errno, "this function isn't implemented");
+	FIXME_STUB_ERRNO("this function isn't implemented");
 	return -1;
 }
 
