@@ -35,7 +35,7 @@
 #include <unistd.h>
 
 #if defined(__APPLE__)
-#include <mach/mach_time.h>;
+#include <mach/mach_time.h>
 #endif
 
 #if defined(__MINGW32__) || defined(__MINGW64__)
