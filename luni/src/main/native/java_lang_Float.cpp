@@ -35,7 +35,11 @@ static jint Float_floatToIntBits(JNIEnv*, jclass, jfloat val) {
     Float f;
     f.f = val;
     //  For this method all values in the NaN range are normalized to the canonical NaN value.
+#if defined(__MINGW32__) || defined(__MINGW64__)
+    return isnan((double)f.f) ? NaN : f.bits;
+#else	
     return isnanf(f.f) ? NaN : f.bits;
+#endif
 }
 
 jint Float_floatToRawIntBits(JNIEnv*, jclass, jfloat val) {

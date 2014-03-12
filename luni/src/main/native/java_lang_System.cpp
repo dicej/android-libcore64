@@ -38,6 +38,10 @@
 #include <mach/mach_time.h>;
 #endif
 
+#if defined(__MINGW32__) || defined(__MINGW64__)
+#include "mingw-extensions.h"
+#endif
+
 static void System_log(JNIEnv* env, jclass, jchar type, jstring javaMessage, jthrowable exception) {
     ScopedUtfChars message(env, javaMessage);
     if (message.c_str() == NULL) {

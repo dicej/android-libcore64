@@ -72,7 +72,10 @@ int JNI_OnLoad(JavaVM* vm, void*) {
     REGISTER(register_libcore_net_RawSocket);
     REGISTER(register_org_apache_harmony_dalvik_NativeTestTarget);
     REGISTER(register_org_apache_harmony_xml_ExpatParser);
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
+    /* not working in MinGW yet */
     REGISTER(register_org_conscrypt_NativeCrypto);
+#endif
     REGISTER(register_sun_misc_Unsafe);
 #undef REGISTER
     return JNI_VERSION_1_6;

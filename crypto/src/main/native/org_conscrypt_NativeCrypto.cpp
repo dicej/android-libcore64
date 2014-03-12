@@ -28,9 +28,21 @@
 #define LOG_TAG "NativeCrypto"
 
 #include <algorithm>
+
+
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
+
 #include <arpa/inet.h>
-#include <fcntl.h>
 #include <sys/socket.h>
+
+#else
+
+#include <ws2tcpip.h>
+#include "mingw-extensions.h"
+
+#endif
+
+#include <fcntl.h>
 #include <unistd.h>
 #include <vector>
 

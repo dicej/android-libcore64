@@ -16,6 +16,7 @@
 
 #define LOG_TAG "Posix"
 
+
 #include "AsynchronousSocketCloseMonitor.h"
 #include "ExecStrings.h"
 #include "JNIHelp.h"
@@ -31,28 +32,37 @@
 #include "UniquePtr.h"
 #include "toStringArray.h"
 
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
+
 #include <arpa/inet.h>
-#include <errno.h>
-#include <fcntl.h>
 #include <net/if.h>
 #include <netdb.h>
 #include <netinet/in.h>
-#include <netinet/in.h>
 #include <poll.h>
 #include <pwd.h>
-#include <signal.h>
-#include <stdlib.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
-#include <sys/socket.h>
-#include <sys/stat.h>
-#include <sys/time.h>
-#include <sys/types.h>
 #include <sys/uio.h>
 #include <sys/utsname.h>
 #include <sys/wait.h>
 #include <termios.h>
+
+#else
+
+#include <ws2tcpip.h>
+#include <winsock2.h>
+#include "mingw-extensions.h"
+
+#endif
+
+#include <errno.h>
+#include <fcntl.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <sys/time.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 #define TO_JAVA_STRING(NAME, EXP) \
@@ -74,6 +84,7 @@ struct addrinfo_deleter {
  *
  * Returns the result of 'exp', though a Java exception will be pending if the result is -1.
  */
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
 #define NET_FAILURE_RETRY(jni_env, return_type, syscall_name, java_fd, ...) ({ \
     return_type _rc = -1; \
     do { \
@@ -94,6 +105,34 @@ struct addrinfo_deleter {
         } \
     } while (_rc == -1); \
     _rc; })
+#else
+#define NET_FAILURE_RETRY(jni_env, return_type, syscall_name, java_fd, ...) ({ \
+    return_type _rc = -1; \
+    { \
+        /* TODO: this cast looks ugly and potentially unsafe, think about fixing somehow */ \
+        SOCKET _fd = jniGetFDFromFileDescriptor(jni_env, java_fd); \
+        AsynchronousSocketCloseMonitor _monitor(_fd); \
+        _rc = syscall_name(_fd, __VA_ARGS__); \
+    } \
+    if (_rc == SOCKET_ERROR || _rc == INVALID_SOCKET) { \
+        int lastError = WSAGetLastError(); \
+        errno = windowsErrorToErrno(lastError); \
+        switch (lastError) { \
+        case WSAEINTR: { \
+                jniThrowException(jni_env, "java/net/SocketException", "Socket closed"); \
+                break; \
+            } \
+        default: { \
+                /* TODO: with a format string we could show the arguments too, like strace(1). */ \
+                throwErrnoExceptionWithCode(jni_env, windowsErrorToErrno(lastError), # syscall_name); \
+                break; \
+            } \
+        } \
+    } else { \
+    	errno = 0; \
+    } \
+    _rc; })
+#endif
 
 static void throwException(JNIEnv* env, jclass exceptionClass, jmethodID ctor3, jmethodID ctor2,
         const char* functionName, int error) {
@@ -127,6 +166,16 @@ static void throwErrnoException(JNIEnv* env, const char* functionName) {
             "<init>", "(Ljava/lang/String;I)V");
     throwException(env, JniConstants::errnoExceptionClass, ctor3, ctor2, functionName, error);
 }
+
+#if defined(__MINGW32__) || defined(__MINGW64__)
+static void throwErrnoExceptionWithCode(JNIEnv* env, int error, const char* functionName) {
+    static jmethodID ctor3 = env->GetMethodID(JniConstants::errnoExceptionClass,
+            "<init>", "(Ljava/lang/String;ILjava/lang/Throwable;)V");
+    static jmethodID ctor2 = env->GetMethodID(JniConstants::errnoExceptionClass,
+            "<init>", "(Ljava/lang/String;I)V");
+    throwException(env, JniConstants::errnoExceptionClass, ctor3, ctor2, functionName, error);
+}
+#endif
 
 static void throwGaiException(JNIEnv* env, const char* functionName, int error) {
   // Cache the methods ids before we throw, so we don't call GetMethodID with a pending exception.
@@ -234,6 +283,14 @@ static jobject makeStructPasswd(JNIEnv* env, const struct passwd& pw) {
 }
 
 static jobject makeStructStat(JNIEnv* env, const struct stat& sb) {
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
+	jlong blksize = static_cast<jlong>(sb.st_blksize);
+	jlong blocks = static_cast<jlong>(sb.st_blocks);
+#else
+	jlong blksize = -1;
+	jlong blocks = -1;
+#endif
+
     static jmethodID ctor = env->GetMethodID(JniConstants::structStatClass, "<init>",
             "(JJIJIIJJJJJJJ)V");
     return env->NewObject(JniConstants::structStatClass, ctor,
@@ -242,8 +299,7 @@ static jobject makeStructStat(JNIEnv* env, const struct stat& sb) {
             static_cast<jint>(sb.st_uid), static_cast<jint>(sb.st_gid),
             static_cast<jlong>(sb.st_rdev), static_cast<jlong>(sb.st_size),
             static_cast<jlong>(sb.st_atime), static_cast<jlong>(sb.st_mtime),
-            static_cast<jlong>(sb.st_ctime), static_cast<jlong>(sb.st_blksize),
-            static_cast<jlong>(sb.st_blocks));
+            static_cast<jlong>(sb.st_ctime), blksize, blocks);
 }
 
 static jobject makeStructStatFs(JNIEnv* env, const struct statfs& sb) {
@@ -396,15 +452,43 @@ private:
     struct passwd* mResult;
 };
 
+static void Posix_init(JNIEnv* env, jclass) {
+#if defined(__MINGW32__) || defined(__MINGW64__)
+	// In Windows socket API needs initialization
+
+	static WSADATA wsaData;
+	int res = WSAStartup(MAKEWORD(2,2), &wsaData);
+	if (res != 0) {
+		throwErrnoException(env, "init");
+	}
+#endif
+}
+
 static jobject Posix_accept(JNIEnv* env, jobject, jobject javaFd, jobject javaInetSocketAddress) {
     sockaddr_storage ss;
     socklen_t sl = sizeof(ss);
     memset(&ss, 0, sizeof(ss));
     sockaddr* peer = (javaInetSocketAddress != NULL) ? reinterpret_cast<sockaddr*>(&ss) : NULL;
     socklen_t* peerLength = (javaInetSocketAddress != NULL) ? &sl : 0;
-    jint clientFd = NET_FAILURE_RETRY(env, int, accept, javaFd, peer, peerLength);
+
+    jint clientFd;
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
+    clientFd = NET_FAILURE_RETRY(env, int, accept, javaFd, peer, peerLength);
+#else
+    SOCKET acceptSock = NET_FAILURE_RETRY(env, SOCKET, accept, javaFd, peer, peerLength);
+    if (acceptSock != INVALID_SOCKET) {
+    	clientFd = acceptSock;
+    } else {
+    	clientFd = -1;
+    }
+#endif
+
     if (clientFd == -1 || !fillInetSocketAddress(env, clientFd, javaInetSocketAddress, ss)) {
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
         close(clientFd);
+#else
+        mingw_close(clientFd);
+#endif
         return NULL;
     }
     return (clientFd != -1) ? jniCreateFileDescriptor(env, clientFd) : NULL;
@@ -455,10 +539,17 @@ static void Posix_close(JNIEnv* env, jobject, jobject javaFd) {
     int fd = jniGetFDFromFileDescriptor(env, javaFd);
     jniSetFileDescriptorOfFD(env, javaFd, -1);
 
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
+
     // Even if close(2) fails with EINTR, the fd will have been closed.
     // Using TEMP_FAILURE_RETRY will either lead to EBADF or closing someone else's fd.
     // http://lkml.indiana.edu/hypermail/linux/kernel/0509.1/0877.html
     throwIfMinusOne(env, "close", close(fd));
+#else
+    // In Windows we have a special closing function cause file descriptors and
+    // socket descriptors are handled differently
+    throwIfMinusOne(env, "close", mingw_close(fd));
+#endif
 }
 
 static void Posix_connect(JNIEnv* env, jobject, jobject javaFd, jobject javaAddress, jint port) {
@@ -737,7 +828,11 @@ static jint Posix_getsockoptByte(JNIEnv* env, jobject, jobject javaFd, jint leve
     int fd = jniGetFDFromFileDescriptor(env, javaFd);
     u_char result = 0;
     socklen_t size = sizeof(result);
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
     throwIfMinusOne(env, "getsockopt", TEMP_FAILURE_RETRY(getsockopt(fd, level, option, &result, &size)));
+#else
+    throwIfMinusOne(env, "getsockopt", TEMP_FAILURE_RETRY(getsockopt(fd, level, option, (char*)&result, &size)));
+#endif
     return result;
 }
 
@@ -748,7 +843,11 @@ static jobject Posix_getsockoptInAddr(JNIEnv* env, jobject, jobject javaFd, jint
     ss.ss_family = AF_INET; // This is only for the IPv4-only IP_MULTICAST_IF.
     sockaddr_in* sa = reinterpret_cast<sockaddr_in*>(&ss);
     socklen_t size = sizeof(sa->sin_addr);
-    int rc = TEMP_FAILURE_RETRY(getsockopt(fd, level, option, &sa->sin_addr, &size));
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
+   int rc = TEMP_FAILURE_RETRY(getsockopt(fd, level, option, &sa->sin_addr, &size));
+#else
+   int rc = TEMP_FAILURE_RETRY(getsockopt(fd, level, option, (char*)&sa->sin_addr, &size));
+#endif
     if (rc == -1) {
         throwErrnoException(env, "getsockopt");
         return NULL;
@@ -760,7 +859,11 @@ static jint Posix_getsockoptInt(JNIEnv* env, jobject, jobject javaFd, jint level
     int fd = jniGetFDFromFileDescriptor(env, javaFd);
     jint result = 0;
     socklen_t size = sizeof(result);
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
     throwIfMinusOne(env, "getsockopt", TEMP_FAILURE_RETRY(getsockopt(fd, level, option, &result, &size)));
+#else
+    throwIfMinusOne(env, "getsockopt", TEMP_FAILURE_RETRY(getsockopt(fd, level, option, (char*)&result, &size)));
+#endif
     return result;
 }
 
@@ -769,7 +872,11 @@ static jobject Posix_getsockoptLinger(JNIEnv* env, jobject, jobject javaFd, jint
     struct linger l;
     socklen_t size = sizeof(l);
     memset(&l, 0, size);
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
     int rc = TEMP_FAILURE_RETRY(getsockopt(fd, level, option, &l, &size));
+#else
+    int rc = TEMP_FAILURE_RETRY(getsockopt(fd, level, option, (char*)&l, &size));
+#endif
     if (rc == -1) {
         throwErrnoException(env, "getsockopt");
         return NULL;
@@ -782,7 +889,11 @@ static jobject Posix_getsockoptTimeval(JNIEnv* env, jobject, jobject javaFd, jin
     struct timeval tv;
     socklen_t size = sizeof(tv);
     memset(&tv, 0, size);
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
     int rc = TEMP_FAILURE_RETRY(getsockopt(fd, level, option, &tv, &size));
+#else
+    int rc = TEMP_FAILURE_RETRY(getsockopt(fd, level, option, (char*)&tv, &size));
+#endif
     if (rc == -1) {
         throwErrnoException(env, "getsockopt");
         return NULL;
@@ -795,7 +906,11 @@ static jobject Posix_getsockoptUcred(JNIEnv* env, jobject, jobject javaFd, jint 
   struct ucred u;
   socklen_t size = sizeof(u);
   memset(&u, 0, size);
-  int rc = TEMP_FAILURE_RETRY(getsockopt(fd, level, option, &u, &size));
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
+    int rc = TEMP_FAILURE_RETRY(getsockopt(fd, level, option, &u, &size));
+#else
+    int rc = TEMP_FAILURE_RETRY(getsockopt(fd, level, option, (char*)&u, &size));
+#endif
   if (rc == -1) {
     throwErrnoException(env, "getsockopt");
     return NULL;
@@ -1061,7 +1176,11 @@ static jint Posix_recvfromBytes(JNIEnv* env, jobject, jobject javaFd, jobject ja
     memset(&ss, 0, sizeof(ss));
     sockaddr* from = (javaInetSocketAddress != NULL) ? reinterpret_cast<sockaddr*>(&ss) : NULL;
     socklen_t* fromLength = (javaInetSocketAddress != NULL) ? &sl : 0;
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
     jint recvCount = NET_FAILURE_RETRY(env, ssize_t, recvfrom, javaFd, bytes.get() + byteOffset, byteCount, flags, from, fromLength);
+#else
+    jint recvCount = NET_FAILURE_RETRY(env, ssize_t, recvfrom, javaFd, reinterpret_cast<char*>(bytes.get() + byteOffset), byteCount, flags, from, fromLength);
+#endif
     fillInetSocketAddress(env, recvCount, javaInetSocketAddress, ss);
     return recvCount;
 }
@@ -1115,7 +1234,11 @@ static jint Posix_sendtoBytes(JNIEnv* env, jobject, jobject javaFd, jobject java
         return -1;
     }
     const sockaddr* to = (javaInetAddress != NULL) ? reinterpret_cast<const sockaddr*>(&ss) : NULL;
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
     return NET_FAILURE_RETRY(env, ssize_t, sendto, javaFd, bytes.get() + byteOffset, byteCount, flags, to, sa_len);
+#else
+    return NET_FAILURE_RETRY(env, ssize_t, sendto, javaFd, reinterpret_cast<const char*>(bytes.get() + byteOffset), byteCount, flags, to, sa_len);
+#endif
 }
 
 static void Posix_setegid(JNIEnv* env, jobject, jint egid) {
@@ -1148,22 +1271,35 @@ static jint Posix_setsid(JNIEnv* env, jobject) {
 
 static void Posix_setsockoptByte(JNIEnv* env, jobject, jobject javaFd, jint level, jint option, jint value) {
     int fd = jniGetFDFromFileDescriptor(env, javaFd);
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
     u_char byte = value;
     throwIfMinusOne(env, "setsockopt", TEMP_FAILURE_RETRY(setsockopt(fd, level, option, &byte, sizeof(byte))));
+#else
+    char byte = value;
+    throwIfMinusOne(env, "setsockopt", TEMP_FAILURE_RETRY(setsockopt(fd, level, option, &byte, sizeof(byte))));
+#endif
 }
 
 static void Posix_setsockoptIfreq(JNIEnv* env, jobject, jobject javaFd, jint level, jint option, jstring javaInterfaceName) {
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
     struct ifreq req;
     if (!fillIfreq(env, javaInterfaceName, req)) {
         return;
     }
     int fd = jniGetFDFromFileDescriptor(env, javaFd);
     throwIfMinusOne(env, "setsockopt", TEMP_FAILURE_RETRY(setsockopt(fd, level, option, &req, sizeof(req))));
+#else
+    throwErrnoExceptionWithCode(env, ENOTSUP, "setsockopt with ifreq not implemented");
+#endif
 }
 
 static void Posix_setsockoptInt(JNIEnv* env, jobject, jobject javaFd, jint level, jint option, jint value) {
     int fd = jniGetFDFromFileDescriptor(env, javaFd);
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
     throwIfMinusOne(env, "setsockopt", TEMP_FAILURE_RETRY(setsockopt(fd, level, option, &value, sizeof(value))));
+#else
+    throwIfMinusOne(env, "setsockopt", TEMP_FAILURE_RETRY(setsockopt(fd, level, option, (char*)&value, sizeof(value))));
+#endif
 }
 
 #if defined(__APPLE__) && MAC_OS_X_VERSION_MAX_ALLOWED < 1070
@@ -1172,11 +1308,15 @@ static void Posix_setsockoptIpMreqn(JNIEnv*, jobject, jobject, jint, jint, jint)
 static void Posix_setsockoptGroupReq(JNIEnv*, jobject, jobject, jint, jint, jobject) { abort(); }
 #else
 static void Posix_setsockoptIpMreqn(JNIEnv* env, jobject, jobject javaFd, jint level, jint option, jint value) {
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
     ip_mreqn req;
     memset(&req, 0, sizeof(req));
     req.imr_ifindex = value;
     int fd = jniGetFDFromFileDescriptor(env, javaFd);
     throwIfMinusOne(env, "setsockopt", TEMP_FAILURE_RETRY(setsockopt(fd, level, option, &req, sizeof(req))));
+#else
+    throwErrnoExceptionWithCode(env, ENOTSUP, "setsockopt with ip mreqn not implemented");
+#endif
 }
 
 static void Posix_setsockoptGroupReq(JNIEnv* env, jobject, jobject javaFd, jint level, jint option, jobject javaGroupReq) {
@@ -1194,7 +1334,11 @@ static void Posix_setsockoptGroupReq(JNIEnv* env, jobject, jobject javaFd, jint 
     }
 
     int fd = jniGetFDFromFileDescriptor(env, javaFd);
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
     int rc = TEMP_FAILURE_RETRY(setsockopt(fd, level, option, &req, sizeof(req)));
+#else
+    int rc = TEMP_FAILURE_RETRY(setsockopt(fd, level, option, reinterpret_cast<char*>(&req), sizeof(req)));
+#endif	
     if (rc == -1 && errno == EINVAL) {
         // Maybe we're a 32-bit binary talking to a 64-bit kernel?
         // glibc doesn't automatically handle this.
@@ -1206,7 +1350,11 @@ static void Posix_setsockoptGroupReq(JNIEnv* env, jobject, jobject javaFd, jint 
         group_req64 req64;
         req64.gr_interface = req.gr_interface;
         memcpy(&req64.gr_group, &req.gr_group, sizeof(req.gr_group));
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
         rc = TEMP_FAILURE_RETRY(setsockopt(fd, level, option, &req64, sizeof(req64)));
+#else
+        rc = TEMP_FAILURE_RETRY(setsockopt(fd, level, option, reinterpret_cast<const char*>(&req64), sizeof(req64)));
+#endif
     }
     throwIfMinusOne(env, "setsockopt", rc);
 }
@@ -1219,7 +1367,11 @@ static void Posix_setsockoptLinger(JNIEnv* env, jobject, jobject javaFd, jint le
     struct linger value;
     value.l_onoff = env->GetIntField(javaLinger, lOnoffFid);
     value.l_linger = env->GetIntField(javaLinger, lLingerFid);
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
     throwIfMinusOne(env, "setsockopt", TEMP_FAILURE_RETRY(setsockopt(fd, level, option, &value, sizeof(value))));
+#else
+    throwIfMinusOne(env, "setsockopt", TEMP_FAILURE_RETRY(setsockopt(fd, level, option, (char*)&value, sizeof(value))));
+#endif
 }
 
 static void Posix_setsockoptTimeval(JNIEnv* env, jobject, jobject javaFd, jint level, jint option, jobject javaTimeval) {
@@ -1229,7 +1381,11 @@ static void Posix_setsockoptTimeval(JNIEnv* env, jobject, jobject javaFd, jint l
     struct timeval value;
     value.tv_sec = env->GetLongField(javaTimeval, tvSecFid);
     value.tv_usec = env->GetLongField(javaTimeval, tvUsecFid);
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
     throwIfMinusOne(env, "setsockopt", TEMP_FAILURE_RETRY(setsockopt(fd, level, option, &value, sizeof(value))));
+#else
+    throwIfMinusOne(env, "setsockopt", TEMP_FAILURE_RETRY(setsockopt(fd, level, option, (char*)&value, sizeof(value))));
+#endif
 }
 
 static void Posix_setuid(JNIEnv* env, jobject, jint uid) {
@@ -1242,8 +1398,19 @@ static void Posix_shutdown(JNIEnv* env, jobject, jobject javaFd, jint how) {
 }
 
 static jobject Posix_socket(JNIEnv* env, jobject, jint domain, jint type, jint protocol) {
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
     int fd = throwIfMinusOne(env, "socket", TEMP_FAILURE_RETRY(socket(domain, type, protocol)));
     return fd != -1 ? jniCreateFileDescriptor(env, fd) : NULL;
+#else
+    SOCKET fd = mingw_socket(domain, type, protocol);
+    if (fd == INVALID_SOCKET)
+    {
+    	throwErrnoException(env, "socket");
+    	return NULL;
+    } else {
+    	return jniCreateFileDescriptor(env, fd);
+    }
+#endif
 }
 
 static void Posix_socketpair(JNIEnv* env, jobject, jint domain, jint type, jint protocol, jobject javaFd1, jobject javaFd2) {
@@ -1364,6 +1531,7 @@ static jint Posix_writev(JNIEnv* env, jobject, jobject javaFd, jobjectArray buff
 }
 
 static JNINativeMethod gMethods[] = {
+    NATIVE_METHOD(Posix, init, "()V"),
     NATIVE_METHOD(Posix, accept, "(Ljava/io/FileDescriptor;Ljava/net/InetSocketAddress;)Ljava/io/FileDescriptor;"),
     NATIVE_METHOD(Posix, access, "(Ljava/lang/String;I)Z"),
     NATIVE_METHOD(Posix, bind, "(Ljava/io/FileDescriptor;Ljava/net/InetAddress;I)V"),

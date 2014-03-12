@@ -16,17 +16,29 @@
 
 #define LOG_TAG "NetworkUtilities"
 
+#if defined(__MINGW32__) || defined(__MINGW64__)
+#include "mingw-extensions.h"
+#endif
+
 #include "NetworkUtilities.h"
 #include "JNIHelp.h"
 #include "JniConstants.h"
 #include "ScopedLocalRef.h"
 
-#include <arpa/inet.h>
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
+#   include <arpa/inet.h>
+#   include <sys/socket.h>
+#   include <sys/un.h>
+#   define SOCKET int
+#else
+#   include <ws2tcpip.h>
+#   include <winsock2.h>
+#endif
+
 #include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/socket.h>
-#include <sys/un.h>
+
 
 jobject sockaddrToInetAddress(JNIEnv* env, const sockaddr_storage& ss, jint* port) {
     // Convert IPv4-mapped IPv6 addresses to IPv4 addresses.
@@ -204,7 +216,8 @@ bool inetAddressToSockaddr(JNIEnv* env, jobject inetAddress, int port, sockaddr_
     return inetAddressToSockaddr(env, inetAddress, port, ss, sa_len, true);
 }
 
-bool setBlocking(int fd, bool blocking) {
+bool setBlocking(SOCKET fd, bool blocking) {
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
     int flags = fcntl(fd, F_GETFL);
     if (flags == -1) {
         return false;
@@ -218,4 +231,14 @@ bool setBlocking(int fd, bool blocking) {
 
     int rc = fcntl(fd, F_SETFL, flags);
     return (rc != -1);
+#else
+    u_long socketMode = blocking?0:1;
+    int rc = ioctlsocket(fd, FIONBIO, &socketMode);
+    if (rc == SOCKET_ERROR) {
+        errno = windowsErrorToErrno(WSAGetLastError());
+        return false;
+    }
+    errno = 0;
+    return true;
+#endif
 }
