@@ -1654,12 +1654,20 @@ public class Arrays {
         cl1 = e1.getClass().getComponentType();
         cl2 = e2.getClass().getComponentType();
 
-        if (cl1 != cl2) {
+        if (cl1 == null) {
+          if (cl2 != null) {
             return false;
+          }
+        } else if (cl2 == null) {
+          return false;
         }
 
         if (cl1 == null) {
             return e1.equals(e2);
+        }
+
+        if ((cl1.isPrimitive() || cl2.isPrimitive()) && cl1 != cl2) {
+            return false;
         }
 
         /*
