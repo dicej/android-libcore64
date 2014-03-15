@@ -108,6 +108,7 @@ int getpwuid_r(uid_t /*uid*/, struct passwd *pwd,
 		pwd->pw_name = buf;
 		pwd->pw_gecos = (const char*)"";
 		pwd->pw_dir = (const char*)"";
+		pwd->pw_shell = (const char*)"";
 		
 		// On success, getpwnam_r() and getpwuid_r() return zero, and set *result to pwd
 		*result = pwd;
