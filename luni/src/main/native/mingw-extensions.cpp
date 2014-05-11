@@ -34,9 +34,9 @@
 
 #ifdef __PROVIDE_FIXMES
 #define FIXME_STUB_ERRNO(message) \
-	printf("FIXME %s:%d: function %s set errno = %d. Cause: %s\nIf you want to ignore messages of this kind, unset the build flag __PROVIDE_FIXMES\n", __FILE__, __LINE__, __FUNCTION__, errno, message);
+	__mingw_printf("FIXME %s:%d: function %s set errno = %d. Cause: %s\nIf you want to ignore messages of this kind, unset the build flag __PROVIDE_FIXMES\n", __FILE__, __LINE__, __FUNCTION__, errno, message);
 #define FIXME_STUB(message) \
-	printf("FIXME %s:%d: function %s returned error. Cause: %s\nIf you want to ignore messages of this kind, unset the build flag __PROVIDE_FIXMES\n", __FILE__, __LINE__, __FUNCTION__, message);
+	__mingw_printf("FIXME %s:%d: function %s returned error. Cause: %s\nIf you want to ignore messages of this kind, unset the build flag __PROVIDE_FIXMES\n", __FILE__, __LINE__, __FUNCTION__, message);
 #else
 #define FIXME_STUB_ERRNO(message)
 #define FIXME_STUB(message)
@@ -108,6 +108,7 @@ int getpwuid_r(uid_t /*uid*/, struct passwd *pwd,
 		pwd->pw_name = buf;
 		pwd->pw_gecos = (const char*)"";
 		pwd->pw_dir = (const char*)"";
+		pwd->pw_shell = (const char*)"";
 		
 		// On success, getpwnam_r() and getpwuid_r() return zero, and set *result to pwd
 		*result = pwd;
