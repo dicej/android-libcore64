@@ -27,7 +27,7 @@
 
 #include "shlwapi.h"
 
-static bool pathIsRelative(JNIEnv* env, jstring path) {
+static bool Windows_pathIsRelative(JNIEnv* env, jstring javaPath) {
     ScopedUtfChars path(env, javaPath);
     if (path.c_str() == NULL) {
         return false;

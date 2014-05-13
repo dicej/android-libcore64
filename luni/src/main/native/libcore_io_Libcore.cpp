@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011 The Android Open Source Project
+ * Copyright (C) 2014 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,20 +14,25 @@
  * limitations under the License.
  */
 
-package libcore.io;
+#define LOG_TAG "Libcore"
 
-public final class Libcore {
-    private Libcore() { }
 
-    private native static boolean isWindows();
-	
-    public static Os os;
-	
-    static {
-        if (!isWindows()) {
-            os = new BlockGuardOs(new Posix());
-        } else {
-            os = new BlockGuardOs(new Windows());
-        }
-    }
+#include "JNIHelp.h"
+#include "JniConstants.h"
+#include "JniException.h"
+
+static bool Libcore_isWindows(JNIEnv* env) {
+#if defined(__MINGW32__) || defined(__MINGW64__)
+	return true;
+#else
+	return false;
+#endif
+}
+
+static JNINativeMethod gMethods[] = {
+    NATIVE_METHOD(Libcore, isWindows, "()B"),
+};
+
+void register_libcore_io_Libcore(JNIEnv* env) {
+    jniRegisterNativeMethods(env, "libcore/io/Libcore", gMethods, NELEM(gMethods));
 }
