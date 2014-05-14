@@ -27,7 +27,7 @@
 
 #include "shlwapi.h"
 
-static bool Windows_pathIsRelative(JNIEnv* env, jstring javaPath) {
+static jboolean Windows_pathIsRelative(JNIEnv* env, jstring javaPath) {
     ScopedUtfChars path(env, javaPath);
     if (path.c_str() == NULL) {
         return false;
@@ -42,7 +42,7 @@ static bool Windows_pathIsRelative(JNIEnv* env, jstring javaPath) {
 
 
 static JNINativeMethod gMethods[] = {
-    NATIVE_METHOD(Windows, pathIsRelative, "(Ljava/lang/String;)B"),
+    NATIVE_METHOD(Windows, pathIsRelative, "(Ljava/lang/String;)Z"),
 };
 #endif
 

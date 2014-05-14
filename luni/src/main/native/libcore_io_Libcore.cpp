@@ -21,7 +21,7 @@
 #include "JniConstants.h"
 #include "JniException.h"
 
-static bool Libcore_isWindows(JNIEnv* env) {
+static jboolean Libcore_isWindows(JNIEnv* env) {
 #if defined(__MINGW32__) || defined(__MINGW64__)
 	return true;
 #else
@@ -30,7 +30,7 @@ static bool Libcore_isWindows(JNIEnv* env) {
 }
 
 static JNINativeMethod gMethods[] = {
-    NATIVE_METHOD(Libcore, isWindows, "()B"),
+    NATIVE_METHOD(Libcore, isWindows, "()Z"),
 };
 
 void register_libcore_io_Libcore(JNIEnv* env) {

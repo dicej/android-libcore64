@@ -45,9 +45,11 @@ LOCAL_SRC_FILES := \
 	libcore_icu_TimeZoneNames.cpp \
 	libcore_icu_Transliterator.cpp \
 	libcore_io_AsynchronousCloseMonitor.cpp \
+	libcore_io_Libcore.cpp \
 	libcore_io_Memory.cpp \
 	libcore_io_OsConstants.cpp \
 	libcore_io_Posix.cpp \
+	libcore_io_Windows.cpp \
 	libcore_net_RawSocket.cpp \
 	org_apache_harmony_xml_ExpatParser.cpp \
 	readlink.cpp \
