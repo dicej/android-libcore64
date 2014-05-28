@@ -27,7 +27,7 @@ public final class Libcore {
         if (!isWindows()) {
             os = new BlockGuardOs(new Posix());
         } else {
-            os = new BlockGuardOs(new Windows());
+            os = new BlockGuardWinOs(new Windows());
         }
     }
 }
