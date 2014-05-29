@@ -14,12 +14,13 @@
  * limitations under the License.
  */
 
+#include "JNIHelp.h"
+
 #if defined(__MINGW32__) || defined(__MINGW64__)
 
 #define LOG_TAG "Windows"
 
 
-#include "JNIHelp.h"
 #include "JniConstants.h"
 #include "JniException.h"
 
