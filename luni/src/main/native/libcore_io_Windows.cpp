@@ -14,13 +14,15 @@
  * limitations under the License.
  */
 
+#if defined(__MINGW32__) || defined(__MINGW64__)
+// needs to be defined prior JNIHelp.h include, otherwise LOG_TAG gets redefined leading
+// to compiler warning
+#define LOG_TAG "Windows"
+#endif
+
 #include "JNIHelp.h"
 
 #if defined(__MINGW32__) || defined(__MINGW64__)
-
-#define LOG_TAG "Windows"
-
-
 #include "JniConstants.h"
 #include "JniException.h"
 
