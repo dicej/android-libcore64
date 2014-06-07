@@ -1795,4 +1795,10 @@ const char* getErrnoDescription(int err)
 	}
 }
 
+#ifdef MINGW_HAS_SECURE_API
+	int strerror_r(int errno, char *buf, size_t len)
+	{ 
+		return strerror_s(buf,len,errno) ;  
+	}
+#endif
 #endif
