@@ -565,4 +565,8 @@ int windowsErrorToErrno(DWORD winErr);
 // Gets a description for errno code
 const char* getErrnoDescription(int err);
 
+#ifdef MINGW_HAS_SECURE_API
+	extern "C" int strerror_r(int errno, char *buf, size_t len) ;
+#endif
+
 #endif
