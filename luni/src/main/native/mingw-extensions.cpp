@@ -1803,8 +1803,8 @@ const char* getErrnoDescription(int err)
 #ifdef MINGW_HAS_SECURE_API
     int strerror_r(int errno, char *buf, size_t len)
     { 
-        char* message = getErrnoDescription(errno) ;
-        return strncpy( buf,message, len) ;
+        const char* message = getErrnoDescription(errno);
+        return strncpy(buf, message, len) != NULL ? 0 : 1;
     }
 #endif
 #endif
