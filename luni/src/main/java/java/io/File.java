@@ -28,6 +28,9 @@ import libcore.io.IoUtils;
 import libcore.io.Libcore;
 import libcore.io.StructStat;
 import libcore.io.StructStatFs;
+import libcore.io.Windows;
+import libcore.io.WinOs;
+
 import org.apache.harmony.luni.util.DeleteOnExit;
 import static libcore.io.OsConstants.*;
 
@@ -514,7 +517,11 @@ public class File implements Serializable, Comparable<File> {
      * @see #getPath
      */
     public boolean isAbsolute() {
-        return path.length() > 0 && path.charAt(0) == separatorChar;
+    	if (Libcore.os instanceof WinOs) {
+    		return !((WinOs)Libcore.os).pathIsRelative(path);
+    	} else {
+    		return path.length() > 0 && path.charAt(0) == separatorChar;
+    	}
     }
 
     /**

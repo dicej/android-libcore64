@@ -417,9 +417,6 @@ int ioctl(int fd, int request, void *argp);
 
 int fchmod(int fd, mode_t mode);
 int lstat(const char *path, struct stat *buf);
-#define _fullpath(res,path,size) \
-  (GetFullPathName ((path), (size), (res), NULL) ? (res) : NULL)
-#define realpath(path,resolved_path) _fullpath(resolved_path, path, MAX_PATH)
 int mkdir(const char *pathname, mode_t mode);
 
 // statfs.h
@@ -558,11 +555,17 @@ int mingw_close(int fd);
  * for newer OSes set IPV6_V6ONLY to "false" for AF_INET6 sockets */
 SOCKET mingw_socket(int af, int type, int protocol);
 
+// An equivalent for POSIX realpath function
+char *mingw_realpath(const char *path, char *resolved_path);
 
 // Converts Windows API error code into errno code
 int windowsErrorToErrno(DWORD winErr);
 
 // Gets a description for errno code
 const char* getErrnoDescription(int err);
+
+#ifdef MINGW_HAS_SECURE_API
+	extern "C" int strerror_r(int errno, char *buf, size_t len) ;
+#endif
 
 #endif

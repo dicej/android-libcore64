@@ -710,13 +710,18 @@ int fstatfs (int fd, struct statfs *buf)
 	return -1;
 }
 
+char *mingw_realpath(const char *path, char *resolved_path)
+{
+    return GetFullPathName(path, MAX_PATH, resolved_path, NULL) ? resolved_path : NULL;
+}
+
 int statfs(const char *path, struct statfs *buf)
 {
 	HINSTANCE h;
 	FARPROC f;
 	int retval = 0;
 	char tmp[MAX_PATH], resolved_path[MAX_PATH];
-	realpath(path, resolved_path);
+	mingw_realpath(path, resolved_path);
 	if (!resolved_path)
 		retval = -1;
 	else
@@ -1795,4 +1800,11 @@ const char* getErrnoDescription(int err)
 	}
 }
 
+#ifdef MINGW_HAS_SECURE_API
+    int strerror_r(int errno, char *buf, size_t len)
+    { 
+        const char* message = getErrnoDescription(errno);
+        return strncpy(buf, message, len) != NULL ? 0 : 1;
+    }
+#endif
 #endif
