@@ -1277,6 +1277,18 @@ SOCKET mingw_socket(int af, int type, int protocol) {
 	return result;
 }
 
+int mingw_connect(SOCKET s, const struct sockaddr *name, int namelen)
+{
+    int rc = connect(s, name, namelen);
+    if (rc == SOCKET_ERROR || rc == INVALID_SOCKET) {
+        int lastError = WSAGetLastError();
+        if (lastError == WSAEWOULDBLOCK) {
+            WSASetLastError(WSAEINPROGRESS);
+        }
+    }
+    return rc;
+}
+
 #ifdef __cplusplus
 extern "C" {
 #endif

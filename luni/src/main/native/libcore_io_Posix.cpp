@@ -560,7 +560,13 @@ static void Posix_connect(JNIEnv* env, jobject, jobject javaFd, jobject javaAddr
     }
     const sockaddr* sa = reinterpret_cast<const sockaddr*>(&ss);
     // We don't need the return value because we'll already have thrown.
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
     (void) NET_FAILURE_RETRY(env, int, connect, javaFd, sa, sa_len);
+#else
+    // On Windows connect() may set errno to EWOULDBLOCK but Posix API awaits for EINPROGRESS,
+    // thus we have a wrapper
+    (void) NET_FAILURE_RETRY(env, int, mingw_connect, javaFd, sa, sa_len);
+#endif
 }
 
 static jobject Posix_dup(JNIEnv* env, jobject, jobject javaOldFd) {

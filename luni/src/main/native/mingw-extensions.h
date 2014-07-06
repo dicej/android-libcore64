@@ -555,6 +555,11 @@ int mingw_close(int fd);
  * for newer OSes set IPV6_V6ONLY to "false" for AF_INET6 sockets */
 SOCKET mingw_socket(int af, int type, int protocol);
 
+/* On Windows connect() functions set errno to EWOULDBLOCK, but Posix API expects EINPROGRESS
+ * in this case, so we wrap the function. 
+*/
+int mingw_connect(SOCKET s, const struct sockaddr *name, int namelen);
+
 // An equivalent for POSIX realpath function
 char *mingw_realpath(const char *path, char *resolved_path);
 
