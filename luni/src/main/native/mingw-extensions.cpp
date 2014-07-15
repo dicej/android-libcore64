@@ -1839,31 +1839,82 @@ ScopedWideChars::ScopedWideChars(JNIEnv* env, jstring s) {
 }
 
 void ScopedWideChars::fillUtf16Data(const char* utf8) {
+    data_ = utf8_to_utf16(utf8, &length_);
+}
+
+wchar_t* utf8_to_utf16(const char* utf8, int* length) {
     // Special case of empty input string
     if (utf8 == NULL || *utf8 == '\0') {
-        wcscpy(data_, L"");
+        if (length != NULL) {
+            *length = 0;
+        }
+        wchar_t *result = new wchar_t[1];
+        result[0] = '\0';
+        return result;
     }
 
     // Get length (in wchar_t's) of resulting UTF-16 string
-    length_ = MultiByteToWideChar(CP_UTF8, 0, utf8, -1, NULL, 0);
+    int length_ = MultiByteToWideChar(CP_UTF8, 0, utf8, -1, NULL, 0);
     if (length_ == 0) {
         // some error happened... for now pretend input string was NULL
-        data_ = NULL;
-        return;
+        return NULL;
     }
 
     // Allocate destination buffer for UTF-16 string
-    data_ = (wchar_t*)malloc(length_ * sizeof(wchar_t));
-    if (data_ == NULL) {
-        // cannot allocate memory...
-        // TODO: maybe throw OutOfMemory here?
+    wchar_t *result = new wchar_t[length_];
+    // Do the conversion from UTF-8 to UTF-16
+    if (!MultiByteToWideChar(CP_UTF8, 0, utf8, -1, result, length_)) {
+        // some error happened... for now pretend input string was NULL
+        delete[] result;
+        return NULL;
+    }
+    
+    if (length != NULL) {
+        *length = length_;
+    }
+    return result;
+}
+
+ExecWideStrings::ExecWideStrings(JNIEnv* env, jobjectArray java_string_array)
+        : env_(env), java_array_(java_string_array), array_(NULL) {
+    if (java_array_ == NULL) {
         return;
     }
-    // Do the conversion from UTF-8 to UTF-16
-    if (!MultiByteToWideChar(CP_UTF8, 0, utf8, -1, &data_[0], length_)) {
-        // some error happened... for now pretend input string was NULL
-        free(data_);
-        data_ = NULL;
+
+    jsize length = env_->GetArrayLength(java_array_);
+    array_ = new wchar_t*[length + 1];
+    array_[length] = NULL;
+    for (jsize i = 0; i < length; ++i) {
+        ScopedLocalRef<jstring> java_string(env_, reinterpret_cast<jstring>(env_->GetObjectArrayElement(java_array_, i)));
+        // We need to pass these strings to const-unfriendly code.
+        const char* utf_chars = env->GetStringUTFChars(java_string.get(), NULL);
+        array_[i] = utf8_to_utf16(utf_chars, NULL);
+        env->ReleaseStringUTFChars(java_string.get(), utf_chars);
+    }
+}
+
+ExecWideStrings::~ExecWideStrings() {
+    if (array_ == NULL) {
+        return;
+    }
+
+    // Temporarily clear any pending exception so we can clean up.
+    jthrowable pending_exception = env_->ExceptionOccurred();
+    if (pending_exception != NULL) {
+        env_->ExceptionClear();
+    }
+
+    jsize length = env_->GetArrayLength(java_array_);
+    for (jsize i = 0; i < length; ++i) {
+        if (array_[i] != NULL) {
+            delete[] array_[i];
+        }
+    }
+    delete[] array_;
+
+    // Re-throw any pending exception.
+    if (pending_exception != NULL) {
+        env_->Throw(pending_exception);
     }
 }
 

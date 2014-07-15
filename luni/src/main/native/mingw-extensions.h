@@ -574,6 +574,8 @@ const char* getErrnoDescription(int err);
 	extern "C" int strerror_r(int errno, char *buf, size_t len) ;
 #endif
 
+const wchar_t* utf8_to_utf16(const char* utf8);
+
 // A smart pointer that provides read-only access to a wide-char strings.
 // Its behaviour is identical to ScopedUtfChars (see ScopedUtfChars.h)
 class ScopedWideChars {
@@ -582,7 +584,7 @@ class ScopedWideChars {
 
         ~ScopedWideChars() {
             if (data_ != NULL) {
-                free(data_);
+                delete[] data_;
             }
         }
         
@@ -606,9 +608,27 @@ class ScopedWideChars {
         void fillUtf16Data(const char* utf8);
 
         // Disallow copy and assignment.
-        ScopedWideChars(const ScopedWideChars&) {};
-        void operator=(const ScopedWideChars&) {};
+        ScopedWideChars(const ScopedWideChars&);
+        void operator=(const ScopedWideChars&);
 };
 
+// wchar_t version of ExecStrings, for more see Android's ExecStrings.h
+class ExecWideStrings {
+    public:
+        ExecWideStrings(JNIEnv* env, jobjectArray java_string_array);
+        ~ExecWideStrings();
+        wchar_t** get() {
+            return array_;
+        }
+
+    private:
+        JNIEnv* env_;
+        jobjectArray java_array_;
+        wchar_t** array_;
+
+        // Disallow copy and assignment.
+        ExecWideStrings(const ExecWideStrings&);
+        void operator=(const ExecWideStrings&);
+};
 
 #endif

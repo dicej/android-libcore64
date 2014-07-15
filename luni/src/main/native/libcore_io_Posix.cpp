@@ -137,6 +137,7 @@ struct addrinfo_deleter {
 // This is about necessity to use wide-char functions on Windows to correctly support Unicode
 #if defined(__MINGW32__) || defined(__MINGW64__)
     #define ScopedPathChars ScopedWideChars
+    #define ExecPathStrings ExecWideStrings
     #define u_open _wopen
     #define u_lstat _wlstat
     #define u_stat _wstat
@@ -156,10 +157,12 @@ struct addrinfo_deleter {
     #define u_unsetenv _wunsetenv
 #else
     #define ScopedPathChars ScopedUtfChars
+    #define ExecPathStrings ExecStrings
     #define u_open open
     #define u_lstat lstat
     #define u_stat stat
     #define _stat stat
+    #define _fstat fstat
     #define u_access access
     #define u_chmod chmod
     #define u_chown chown
@@ -634,8 +637,8 @@ static void Posix_execve(JNIEnv* env, jobject, jstring javaFilename, jobjectArra
         return;
     }
 
-    ExecStrings argv(env, javaArgv);
-    ExecStrings envp(env, javaEnvp);
+    ExecPathStrings argv(env, javaArgv);
+    ExecPathStrings envp(env, javaEnvp);
     u_execve(path.c_str(), argv.get(), envp.get());
 
     throwErrnoException(env, "execve");
@@ -647,7 +650,7 @@ static void Posix_execv(JNIEnv* env, jobject, jstring javaFilename, jobjectArray
         return;
     }
 
-    ExecStrings argv(env, javaArgv);
+    ExecPathStrings argv(env, javaArgv);
     u_execv(path.c_str(), argv.get());
 
     throwErrnoException(env, "execv");
@@ -707,8 +710,8 @@ static void Posix_fdatasync(JNIEnv* env, jobject, jobject javaFd) {
 
 static jobject Posix_fstat(JNIEnv* env, jobject, jobject javaFd) {
     int fd = jniGetFDFromFileDescriptor(env, javaFd);
-    struct stat sb;
-    int rc = TEMP_FAILURE_RETRY(fstat(fd, &sb));
+    struct _stat sb;
+    int rc = TEMP_FAILURE_RETRY(_fstat(fd, &sb));
     if (rc == -1) {
         throwErrnoException(env, "fstat");
         return NULL;
