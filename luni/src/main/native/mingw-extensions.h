@@ -438,7 +438,7 @@ struct statfs {
 };
 
 int fstatfs(int fd, struct statfs *buf);
-int statfs(const char *path, struct statfs *buf);
+int _wstatfs(const wchar_t *path, struct statfs *buf);
 
 // poll.h
 
@@ -511,15 +511,14 @@ int inet_pton(int af, const char *src, void *dst);
 const char *inet_ntop(int af, const void *src, char *dst, size_t cnt);
 // stdlib.h
 
-#define unsetenv(pname) SetEnvironmentVariable(pname, NULL)
-#define setenv(__pname,__pvalue,___overwrite) \
-({ \
-  int result; \
- if (___overwrite == 0 && getenv (__pname)) result = 0; \
-   else \
-     result = SetEnvironmentVariable (__pname,__pvalue); \
- result; \
-})
+#define _wunsetenv(pname) SetEnvironmentVariableW(pname, NULL)
+int _wsetenv(const wchar_t *name, const wchar_t *value, int replace) {
+    if (replace == 0 && _wgetenv(name)) {
+        // variable already exists, and we were requested to not replace existing value
+        return 0;
+    }
+    return SetEnvironmentVariableW(name, value);
+}
 
 // termios.h
 
@@ -574,7 +573,8 @@ const char* getErrnoDescription(int err);
 	extern "C" int strerror_r(int errno, char *buf, size_t len) ;
 #endif
 
-const wchar_t* utf8_to_utf16(const char* utf8);
+wchar_t* utf8_to_utf16(const char* utf8, int* length);
+char* utf16_to_utf8(const wchar_t* utf16, int* length);
 
 // A smart pointer that provides read-only access to a wide-char strings.
 // Its behaviour is identical to ScopedUtfChars (see ScopedUtfChars.h)

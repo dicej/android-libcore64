@@ -828,8 +828,15 @@ static jstring Posix_getenv(JNIEnv* env, jobject, jstring javaName) {
     if (name.c_str() == NULL) {
         return NULL;
     }
-    // TODO: convert wide string from _wgetenv to UTF8
+
+    #if defined(__MINGW32__) || defined(__MINGW64__)
+    char* utf8value = utf16_to_utf8(u_getenv(name.c_str()), NULL);
+    jstring result = env->NewStringUTF(utf8value);
+    delete[] utf8value;
+    return result;
+    #else
     return env->NewStringUTF(u_getenv(name.c_str()));
+    #endif
 }
 
 static jstring Posix_getnameinfo(JNIEnv* env, jobject, jobject javaAddress, jint flags) {

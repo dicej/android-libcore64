@@ -710,17 +710,17 @@ int fstatfs (int fd, struct statfs *buf)
 	return -1;
 }
 
-char *mingw_realpath(const char *path, char *resolved_path)
+wchar_t *mingw_realpath(const wchar_t *path, wchar_t *resolved_path)
 {
-    return GetFullPathName(path, MAX_PATH, resolved_path, NULL) ? resolved_path : NULL;
+    return GetFullPathNameW(path, MAX_PATH, resolved_path, NULL) ? resolved_path : NULL;
 }
 
-int statfs(const char *path, struct statfs *buf)
+int _wstatfs(const wchar_t *path, struct statfs *buf)
 {
 	HINSTANCE h;
 	FARPROC f;
 	int retval = 0;
-	char tmp[MAX_PATH], resolved_path[MAX_PATH];
+	wchar_t tmp[MAX_PATH], resolved_path[MAX_PATH];
 	mingw_realpath(path, resolved_path);
 	if (!resolved_path)
 		retval = -1;
@@ -729,13 +729,13 @@ int statfs(const char *path, struct statfs *buf)
 		/* check whether GetDiskFreeSpaceExA is supported */
 		h = LoadLibraryA("kernel32.dll");
 		if (h)
-			f = GetProcAddress(h, "GetDiskFreeSpaceExA");
+			f = GetProcAddress(h, "GetDiskFreeSpaceExW");
 		else
 			f = NULL;
 		if (f)
 		{
 			ULARGE_INTEGER bytes_free, bytes_total, bytes_free2;
-			if (!GetDiskFreeSpaceExA(resolved_path, &bytes_free2, &bytes_total,
+			if (!GetDiskFreeSpaceExW(resolved_path, &bytes_free2, &bytes_total,
 					&bytes_free))
 			{
 				errno = ENOENT;
@@ -756,7 +756,7 @@ int statfs(const char *path, struct statfs *buf)
 			DWORD sectors_per_cluster, bytes_per_sector;
 			if (h)
 				FreeLibrary(h);
-			if (!GetDiskFreeSpaceA(resolved_path,
+			if (!GetDiskFreeSpaceW(resolved_path,
 					(LPDWORD) &sectors_per_cluster, (LPDWORD) &bytes_per_sector,
 					(LPDWORD) &buf->f_bavail, (LPDWORD) &buf->f_blocks))
 			{
@@ -778,7 +778,7 @@ int statfs(const char *path, struct statfs *buf)
 	/* get the FS volume information */
 	if (strspn(":", resolved_path) > 0)
 		resolved_path[3] = '\0'; /* we want only the root */
-	if (GetVolumeInformation(resolved_path, NULL, 0, (LPDWORD) &buf->f_fsid,
+	if (GetVolumeInformationW(resolved_path, NULL, 0, (LPDWORD) &buf->f_fsid,
 			(LPDWORD) &buf->f_namelen, NULL, tmp, MAX_PATH))
 	{
 		if (strcasecmp("NTFS", tmp) == 0)
@@ -1864,6 +1864,39 @@ wchar_t* utf8_to_utf16(const char* utf8, int* length) {
     wchar_t *result = new wchar_t[length_];
     // Do the conversion from UTF-8 to UTF-16
     if (!MultiByteToWideChar(CP_UTF8, 0, utf8, -1, result, length_)) {
+        // some error happened... for now pretend input string was NULL
+        delete[] result;
+        return NULL;
+    }
+    
+    if (length != NULL) {
+        *length = length_;
+    }
+    return result;
+}
+
+char* utf16_to_utf8(const wchar_t* utf16, int* length) {
+    // Special case of empty input string
+    if (utf16 == NULL || *utf16 == '\0') {
+        if (length != NULL) {
+            *length = 0;
+        }
+        char *result = new char[1];
+        result[0] = '\0';
+        return result;
+    }
+
+    // Get length of resulting UTF-8 string
+    int length_ = WideCharToMultiByte(CP_UTF8, MB_ERR_INVALID_CHARS, utf8, -1, NULL, 0, NULL, NULL);
+    if (length_ == 0) {
+        // some error happened... for now pretend input string was NULL
+        return NULL;
+    }
+
+    // Allocate destination buffer for UTF-16 string
+    char *result = new char[length_];
+    // Do the conversion from UTF-8 to UTF-16
+    if (!WideCharToMultiByte(CP_UTF8, MB_ERR_INVALID_CHARS, utf8, -1, result, length_, NULL, NULL)) {
         // some error happened... for now pretend input string was NULL
         delete[] result;
         return NULL;
