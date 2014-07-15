@@ -24,8 +24,10 @@
 
 #include <stdarg.h>
 #include <ws2tcpip.h>
+#include <wchar.h>
 
 #include "mingw-extensions.h"
+#include "ScopedLocalRef.h"
 
 // If __PROVIDE_FIXMES is defined, every unimplemented function prints a FIXME message
 // Some functions are not implemented due to their uselessness in Java API, but they
@@ -776,12 +778,12 @@ int _wstatfs(const wchar_t *path, struct statfs *buf)
 	}
 
 	/* get the FS volume information */
-	if (strspn(":", resolved_path) > 0)
+	if (wcsspn(L":", resolved_path) > 0)
 		resolved_path[3] = '\0'; /* we want only the root */
 	if (GetVolumeInformationW(resolved_path, NULL, 0, (LPDWORD) &buf->f_fsid,
 			(LPDWORD) &buf->f_namelen, NULL, tmp, MAX_PATH))
 	{
-		if (strcasecmp("NTFS", tmp) == 0)
+		if (_wcsicmp(L"NTFS", tmp) == 0)
 		{
 			buf->f_type = NTFS_SUPER_MAGIC;
 		}
@@ -1887,7 +1889,7 @@ char* utf16_to_utf8(const wchar_t* utf16, int* length) {
     }
 
     // Get length of resulting UTF-8 string
-    int length_ = WideCharToMultiByte(CP_UTF8, MB_ERR_INVALID_CHARS, utf8, -1, NULL, 0, NULL, NULL);
+    int length_ = WideCharToMultiByte(CP_UTF8, MB_ERR_INVALID_CHARS, utf16, -1, NULL, 0, NULL, NULL);
     if (length_ == 0) {
         // some error happened... for now pretend input string was NULL
         return NULL;
@@ -1896,7 +1898,7 @@ char* utf16_to_utf8(const wchar_t* utf16, int* length) {
     // Allocate destination buffer for UTF-16 string
     char *result = new char[length_];
     // Do the conversion from UTF-8 to UTF-16
-    if (!WideCharToMultiByte(CP_UTF8, MB_ERR_INVALID_CHARS, utf8, -1, result, length_, NULL, NULL)) {
+    if (!WideCharToMultiByte(CP_UTF8, MB_ERR_INVALID_CHARS, utf16, -1, result, length_, NULL, NULL)) {
         // some error happened... for now pretend input string was NULL
         delete[] result;
         return NULL;

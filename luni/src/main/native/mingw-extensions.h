@@ -593,17 +593,17 @@ class ScopedWideChars {
             return data_;
         }
 
-        const size_t size() const {
+        const int size() const {
             return length_;
         }
 
-        const wchar_t& operator[](size_t n) const {
+        const wchar_t& operator[](int n) const {
             return data_[n];
         }
 
     private:
         wchar_t* data_;
-        size_t length_;
+        int length_;
         
         void fillUtf16Data(const char* utf8);
 
