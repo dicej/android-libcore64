@@ -376,10 +376,10 @@ int setegid(gid_t egid);
 int setgid(gid_t gid);
 pid_t setsid();
 int setuid(uid_t euid);
-int chown(const char *path, uid_t owner, gid_t group);
-int lchown(const char *path, uid_t owner, gid_t group);
+int _wchown(const wchar_t *path, uid_t owner, gid_t group);
+int _wlchown(const wchar_t *path, uid_t owner, gid_t group);
 int fchown(int fd, uid_t owner, gid_t group);
-int symlink(const char *path1, const char *path2);
+int _wsymlink(const wchar_t *path1, const wchar_t *path2);
 int sysconf(int name);
 ssize_t pread64(int fd, void *buf, size_t count, off_t offset);
 ssize_t pwrite64(int fd, const void *buf, size_t count, off_t offset);
@@ -417,8 +417,8 @@ int ioctl(int fd, int request, void *argp);
 #define S_IXOTH					00001
 
 int fchmod(int fd, mode_t mode);
-int lstat(const char *path, struct stat *buf);
-int mkdir(const char *pathname, mode_t mode);
+int _wlstat(const wchar_t *path, struct _stat *buf);
+int _wmkdir(const wchar_t *pathname, mode_t mode);
 
 // statfs.h
 

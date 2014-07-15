@@ -159,6 +159,7 @@ struct addrinfo_deleter {
     #define u_open open
     #define u_lstat lstat
     #define u_stat stat
+    #define _stat stat
     #define u_access access
     #define u_chmod chmod
     #define u_chown chown
@@ -323,7 +324,7 @@ static jobject makeStructPasswd(JNIEnv* env, const struct passwd& pw) {
             pw_name, static_cast<jint>(pw.pw_uid), static_cast<jint>(pw.pw_gid), pw_dir, pw_shell);
 }
 
-static jobject makeStructStat(JNIEnv* env, const struct stat& sb) {
+static jobject makeStructStat(JNIEnv* env, const struct _stat& sb) {
 #if !defined(__MINGW32__) && !defined(__MINGW64__)
 	jlong blksize = static_cast<jlong>(sb.st_blksize);
 	jlong blocks = static_cast<jlong>(sb.st_blocks);
@@ -432,7 +433,7 @@ static jobject doStat(JNIEnv* env, jstring javaPath, bool isLstat) {
     if (path.c_str() == NULL) {
         return NULL;
     }
-    struct stat sb;
+    struct _stat sb;
     int rc = isLstat ? TEMP_FAILURE_RETRY(u_lstat(path.c_str(), &sb))
                      : TEMP_FAILURE_RETRY(u_stat(path.c_str(), &sb));
     if (rc == -1) {

@@ -119,13 +119,13 @@ int getpwuid_r(uid_t /*uid*/, struct passwd *pwd,
 #pragma GCC diagnostic pop
 
 // chown
-int chown(const char *path, uid_t owner, gid_t group)
+int _wchown(const wchar_t *path, uid_t owner, gid_t group)
 {
 	errno = EBADF;
 	FIXME_STUB_ERRNO("this function isn't supported yet");
 	return -1;
 }
-int lchown(const char *path, uid_t owner, gid_t group)
+int _wlchown(const wchar_t *path, uid_t owner, gid_t group)
 {
 	errno = EBADF;
 	FIXME_STUB_ERRNO("this function isn't supported yet");
@@ -148,10 +148,10 @@ int mincore(void *addr, size_t length, unsigned char *vec)
 }
 
 // mkdir
-int mkdir(const char *pathname, mode_t mode)
+int _wmkdir(const wchar_t *pathname, mode_t mode)
 {
 	// Just ignoring the mode
-	return mkdir(pathname);
+	return _wmkdir(pathname);
 }
 
 DWORD mmap_page(const int prot)
@@ -838,7 +838,7 @@ int asprintf(char **strp, const char *fmt, ...)
 
 // lstat
 
-int lstat(const char *path, struct stat *buf)
+int _wlstat(const wchar_t *path, struct _stat *buf)
 {
 	// We don't support symbolic links in Windows
 	errno = EBADF;
@@ -1217,7 +1217,7 @@ char *strsignal(int sig)
 
 // symlink
 
-int symlink(const char *path1, const char *path2)
+int _wsymlink(const wchar_t *path1, const wchar_t *path2)
 {
 	errno = EACCES;
 	FIXME_STUB("this function isn't implemented");
