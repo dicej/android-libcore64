@@ -134,6 +134,16 @@ struct addrinfo_deleter {
     _rc; })
 #endif
 
+// This is about necessity to use wide-char functions on Windows to correctly support Unicode
+#if defined(__MINGW32__) || defined(__MINGW64__)
+#define ScopedPathChars ScopedWideChars
+#define u_open _wopen
+#else
+#define ScopedPathChars ScopedUtfChars
+#define u_open open
+#endif
+
+
 static void throwException(JNIEnv* env, jclass exceptionClass, jmethodID ctor3, jmethodID ctor2,
         const char* functionName, int error) {
     jthrowable cause = NULL;
@@ -1058,14 +1068,14 @@ static void Posix_munmap(JNIEnv* env, jobject, jlong address, jlong byteCount) {
 }
 
 static jobject Posix_open(JNIEnv* env, jobject, jstring javaPath, jint flags, jint mode) {
-    ScopedUtfChars path(env, javaPath);
+    ScopedPathChars path(env, javaPath);
     if (path.c_str() == NULL) {
         return NULL;
     }
     #if defined(__MINGW32__) || defined(__MINGW64__)
     flags |= O_BINARY;
     #endif
-    int fd = throwIfMinusOne(env, "open", TEMP_FAILURE_RETRY(open(path.c_str(), flags, mode)));
+    int fd = throwIfMinusOne(env, "open", TEMP_FAILURE_RETRY(u_open(path.c_str(), flags, mode)));
     return fd != -1 ? jniCreateFileDescriptor(env, fd) : NULL;
 }
 

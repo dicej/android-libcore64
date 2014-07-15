@@ -36,6 +36,7 @@
 #include <iphlpapi.h>
 
 #include "Portability.h"
+#include "jni.h"
 
 // errno.h
 
@@ -572,5 +573,42 @@ const char* getErrnoDescription(int err);
 #ifdef MINGW_HAS_SECURE_API
 	extern "C" int strerror_r(int errno, char *buf, size_t len) ;
 #endif
+
+// A smart pointer that provides read-only access to a wide-char strings.
+// Its behaviour is identical to ScopedUtfChars (see ScopedUtfChars.h)
+class ScopedWideChars {
+    public:
+        ScopedWideChars(JNIEnv* env, jstring s);
+
+        ~ScopedWideChars() {
+            if (data_ != NULL) {
+                free(data_);
+            }
+        }
+        
+        
+        const wchar_t* c_str() const {
+            return data_;
+        }
+
+        const size_t size() const {
+            return length_;
+        }
+
+        const wchar_t& operator[](size_t n) const {
+            return data_[n];
+        }
+
+    private:
+        wchar_t* data_;
+        size_t length_;
+        
+        void fillUtf16Data(const char* utf8);
+
+        // Disallow copy and assignment.
+        ScopedWideChars(const ScopedWideChars&) {};
+        void operator=(const ScopedWideChars&) {};
+};
+
 
 #endif

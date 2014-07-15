@@ -1819,4 +1819,52 @@ const char* getErrnoDescription(int err)
         return strncpy(buf, message, len) != NULL ? 0 : 1;
     }
 #endif
+
+int jniThrowNullPointerException(JNIEnv* env, const char* msg);
+
+ScopedWideChars::ScopedWideChars(JNIEnv* env, jstring s) {
+    data_ = NULL;
+    if (s != NULL) {
+        // We do the dance here because Java internal encoding might be not the one wide
+        // character encoding used by Windows, so we first convert internal encoding
+        // to UTF8 which in turn we convert to multibyte wide string using Windows API.
+        // This is somewhat slow but should be safe.
+        const char* utf_chars = env->GetStringUTFChars(s, NULL);
+        fillUtf16Data(utf_chars);
+        env->ReleaseStringUTFChars(s, utf_chars);
+    }
+    if (data_ == NULL) {
+        jniThrowNullPointerException(env, NULL);
+    }
+}
+
+void ScopedWideChars::fillUtf16Data(const char* utf8) {
+    // Special case of empty input string
+    if (utf8 == NULL || *utf8 == '\0') {
+        wcscpy(data_, L"");
+    }
+
+    // Get length (in wchar_t's) of resulting UTF-16 string
+    length_ = MultiByteToWideChar(CP_UTF8, 0, utf8, -1, NULL, 0);
+    if (length_ == 0) {
+        // some error happened... for now pretend input string was NULL
+        data_ = NULL;
+        return;
+    }
+
+    // Allocate destination buffer for UTF-16 string
+    data_ = (wchar_t*)malloc(length_ * sizeof(wchar_t));
+    if (data_ == NULL) {
+        // cannot allocate memory...
+        // TODO: maybe throw OutOfMemory here?
+        return;
+    }
+    // Do the conversion from UTF-8 to UTF-16
+    if (!MultiByteToWideChar(CP_UTF8, 0, utf8, -1, &data_[0], length_)) {
+        // some error happened... for now pretend input string was NULL
+        free(data_);
+        data_ = NULL;
+    }
+}
+
 #endif

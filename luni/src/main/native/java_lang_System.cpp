@@ -90,6 +90,12 @@ static jobjectArray System_specialProperties(JNIEnv* env, jclass) {
     properties.push_back("android.zlib.version=" ZLIB_VERSION);
     properties.push_back("android.openssl.version=" OPENSSL_VERSION_TEXT);
 
+#if defined(__MINGW32__) || defined(__MINGW64__)
+    // set some Windows-specific values to override those set by System.java/lang/System
+    properties.push_back("file.separator=\\");
+    properties.push_back("line.separator=\r\n");
+    properties.push_back("path.separator=;");
+#endif
     return toStringArray(env, properties);
 }
 
