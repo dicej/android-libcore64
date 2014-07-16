@@ -511,14 +511,8 @@ int inet_pton(int af, const char *src, void *dst);
 const char *inet_ntop(int af, const void *src, char *dst, size_t cnt);
 // stdlib.h
 
-#define _wunsetenv(pname) SetEnvironmentVariableW(pname, NULL)
-int _wsetenv(const wchar_t *name, const wchar_t *value, int replace) {
-    if (replace == 0 && _wgetenv(name)) {
-        // variable already exists, and we were requested to not replace existing value
-        return 0;
-    }
-    return SetEnvironmentVariableW(name, value);
-}
+int _wunsetenv(const wchar_t *pname);
+int _wsetenv(const wchar_t *name, const wchar_t *value, int replace);
 
 // termios.h
 
@@ -562,6 +556,7 @@ int mingw_connect(SOCKET s, const struct sockaddr *name, int namelen);
 
 // An equivalent for POSIX realpath function
 char *mingw_realpath(const char *path, char *resolved_path);
+wchar_t *mingw_realpath(const wchar_t *path, wchar_t *resolved_path);
 
 // Converts Windows API error code into errno code
 int windowsErrorToErrno(DWORD winErr);

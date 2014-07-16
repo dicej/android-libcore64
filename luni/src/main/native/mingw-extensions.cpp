@@ -705,6 +705,19 @@ const char *inet_ntop(int af, const void *src, char *dst, size_t cnt) {
 	return dst;
 }
 
+// TODO: fill errno?..
+int _wunsetenv(const wchar_t *pname) {
+    return SetEnvironmentVariableW(pname, NULL);
+}
+
+int _wsetenv(const wchar_t *name, const wchar_t *value, int replace) {
+    if (replace == 0 && _wgetenv(name)) {
+        // variable already exists, and we were requested to not replace existing value
+        return 0;
+    }
+    return SetEnvironmentVariableW(name, value);
+}
+
 int fstatfs (int fd, struct statfs *buf)
 {
 	errno = EINVAL;
@@ -712,13 +725,15 @@ int fstatfs (int fd, struct statfs *buf)
 	return -1;
 }
 
-wchar_t *mingw_realpath(const wchar_t *path, wchar_t *resolved_path)
-{
+wchar_t *mingw_realpath(const wchar_t *path, wchar_t *resolved_path) {
     return GetFullPathNameW(path, MAX_PATH, resolved_path, NULL) ? resolved_path : NULL;
 }
 
-int _wstatfs(const wchar_t *path, struct statfs *buf)
-{
+char *mingw_realpath(const char *path, char *resolved_path) {
+    return GetFullPathNameA(path, MAX_PATH, resolved_path, NULL) ? resolved_path : NULL;
+}
+
+int _wstatfs(const wchar_t *path, struct statfs *buf) {
 	HINSTANCE h;
 	FARPROC f;
 	int retval = 0;
