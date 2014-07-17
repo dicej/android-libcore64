@@ -24,8 +24,10 @@
 
 #include <stdarg.h>
 #include <ws2tcpip.h>
+#include <wchar.h>
 
 #include "mingw-extensions.h"
+#include "ScopedLocalRef.h"
 
 // If __PROVIDE_FIXMES is defined, every unimplemented function prints a FIXME message
 // Some functions are not implemented due to their uselessness in Java API, but they
@@ -119,13 +121,13 @@ int getpwuid_r(uid_t /*uid*/, struct passwd *pwd,
 #pragma GCC diagnostic pop
 
 // chown
-int chown(const char *path, uid_t owner, gid_t group)
+int _wchown(const wchar_t *path, uid_t owner, gid_t group)
 {
 	errno = EBADF;
 	FIXME_STUB_ERRNO("this function isn't supported yet");
 	return -1;
 }
-int lchown(const char *path, uid_t owner, gid_t group)
+int _wlchown(const wchar_t *path, uid_t owner, gid_t group)
 {
 	errno = EBADF;
 	FIXME_STUB_ERRNO("this function isn't supported yet");
@@ -148,10 +150,10 @@ int mincore(void *addr, size_t length, unsigned char *vec)
 }
 
 // mkdir
-int mkdir(const char *pathname, mode_t mode)
+int _wmkdir(const wchar_t *pathname, mode_t mode)
 {
 	// Just ignoring the mode
-	return mkdir(pathname);
+	return _wmkdir(pathname);
 }
 
 DWORD mmap_page(const int prot)
@@ -703,6 +705,19 @@ const char *inet_ntop(int af, const void *src, char *dst, size_t cnt) {
 	return dst;
 }
 
+// TODO: fill errno?..
+int _wunsetenv(const wchar_t *pname) {
+    return SetEnvironmentVariableW(pname, NULL);
+}
+
+int _wsetenv(const wchar_t *name, const wchar_t *value, int replace) {
+    if (replace == 0 && _wgetenv(name)) {
+        // variable already exists, and we were requested to not replace existing value
+        return 0;
+    }
+    return SetEnvironmentVariableW(name, value);
+}
+
 int fstatfs (int fd, struct statfs *buf)
 {
 	errno = EINVAL;
@@ -710,17 +725,19 @@ int fstatfs (int fd, struct statfs *buf)
 	return -1;
 }
 
-char *mingw_realpath(const char *path, char *resolved_path)
-{
-    return GetFullPathName(path, MAX_PATH, resolved_path, NULL) ? resolved_path : NULL;
+wchar_t *mingw_realpath(const wchar_t *path, wchar_t *resolved_path) {
+    return GetFullPathNameW(path, MAX_PATH, resolved_path, NULL) ? resolved_path : NULL;
 }
 
-int statfs(const char *path, struct statfs *buf)
-{
+char *mingw_realpath(const char *path, char *resolved_path) {
+    return GetFullPathNameA(path, MAX_PATH, resolved_path, NULL) ? resolved_path : NULL;
+}
+
+int _wstatfs(const wchar_t *path, struct statfs *buf) {
 	HINSTANCE h;
 	FARPROC f;
 	int retval = 0;
-	char tmp[MAX_PATH], resolved_path[MAX_PATH];
+	wchar_t tmp[MAX_PATH], resolved_path[MAX_PATH];
 	mingw_realpath(path, resolved_path);
 	if (!resolved_path)
 		retval = -1;
@@ -729,13 +746,13 @@ int statfs(const char *path, struct statfs *buf)
 		/* check whether GetDiskFreeSpaceExA is supported */
 		h = LoadLibraryA("kernel32.dll");
 		if (h)
-			f = GetProcAddress(h, "GetDiskFreeSpaceExA");
+			f = GetProcAddress(h, "GetDiskFreeSpaceExW");
 		else
 			f = NULL;
 		if (f)
 		{
 			ULARGE_INTEGER bytes_free, bytes_total, bytes_free2;
-			if (!GetDiskFreeSpaceExA(resolved_path, &bytes_free2, &bytes_total,
+			if (!GetDiskFreeSpaceExW(resolved_path, &bytes_free2, &bytes_total,
 					&bytes_free))
 			{
 				errno = ENOENT;
@@ -756,7 +773,7 @@ int statfs(const char *path, struct statfs *buf)
 			DWORD sectors_per_cluster, bytes_per_sector;
 			if (h)
 				FreeLibrary(h);
-			if (!GetDiskFreeSpaceA(resolved_path,
+			if (!GetDiskFreeSpaceW(resolved_path,
 					(LPDWORD) &sectors_per_cluster, (LPDWORD) &bytes_per_sector,
 					(LPDWORD) &buf->f_bavail, (LPDWORD) &buf->f_blocks))
 			{
@@ -776,12 +793,12 @@ int statfs(const char *path, struct statfs *buf)
 	}
 
 	/* get the FS volume information */
-	if (strspn(":", resolved_path) > 0)
+	if (wcsspn(L":", resolved_path) > 0)
 		resolved_path[3] = '\0'; /* we want only the root */
-	if (GetVolumeInformation(resolved_path, NULL, 0, (LPDWORD) &buf->f_fsid,
+	if (GetVolumeInformationW(resolved_path, NULL, 0, (LPDWORD) &buf->f_fsid,
 			(LPDWORD) &buf->f_namelen, NULL, tmp, MAX_PATH))
 	{
-		if (strcasecmp("NTFS", tmp) == 0)
+		if (_wcsicmp(L"NTFS", tmp) == 0)
 		{
 			buf->f_type = NTFS_SUPER_MAGIC;
 		}
@@ -838,7 +855,7 @@ int asprintf(char **strp, const char *fmt, ...)
 
 // lstat
 
-int lstat(const char *path, struct stat *buf)
+int _wlstat(const wchar_t *path, struct _stat *buf)
 {
 	// We don't support symbolic links in Windows
 	errno = EBADF;
@@ -1217,7 +1234,7 @@ char *strsignal(int sig)
 
 // symlink
 
-int symlink(const char *path1, const char *path2)
+int _wsymlink(const wchar_t *path1, const wchar_t *path2)
 {
 	errno = EACCES;
 	FIXME_STUB("this function isn't implemented");
@@ -1819,4 +1836,146 @@ const char* getErrnoDescription(int err)
         return strncpy(buf, message, len) != NULL ? 0 : 1;
     }
 #endif
+
+int jniThrowNullPointerException(JNIEnv* env, const char* msg);
+
+ScopedWideChars::ScopedWideChars(JNIEnv* env, jstring s):
+        env_(env), string_(s) {
+    if (s == NULL) {
+        data_ = NULL;
+        jniThrowNullPointerException(env, NULL);
+    } else {
+        data_ = env->GetStringChars(s, NULL);
+    }
+}
+
+ScopedWideChars::~ScopedWideChars() {
+    if (data_) {
+        env_->ReleaseStringChars(string_, data_);
+    }
+}
+
+const wchar_t* ScopedWideChars::c_str() const {
+    return data_;
+}
+
+const int ScopedWideChars::size() const {
+    return wcslen(data_);
+}
+
+const wchar_t& ScopedWideChars::operator[](int n) const {
+    return data_[n];
+}
+
+wchar_t* utf8_to_widechar(const char* utf8, int* length) {
+    // Special case of empty input string
+    if (utf8 == NULL || *utf8 == '\0') {
+        if (length != NULL) {
+            *length = 0;
+        }
+        wchar_t *result = new wchar_t[1];
+        result[0] = '\0';
+        return result;
+    }
+
+    // Get length (in wchar_t's) of resulting UTF-16 string
+    int length_ = MultiByteToWideChar(CP_UTF8, 0, utf8, -1, NULL, 0);
+    if (length_ == 0) {
+        // some error happened... for now pretend input string was NULL
+        return NULL;
+    }
+
+    // Allocate destination buffer for UTF-16 string
+    wchar_t *result = new wchar_t[length_];
+    // Do the conversion from UTF-8 to UTF-16
+    if (!MultiByteToWideChar(CP_UTF8, 0, utf8, -1, result, length_)) {
+        // some error happened... for now pretend input string was NULL
+        delete[] result;
+        return NULL;
+    }
+    
+    if (length != NULL) {
+        *length = length_;
+    }
+    return result;
+}
+
+char* widechar_to_utf8(const wchar_t* utf16, int* length) {
+    // Special case of empty input string
+    if (utf16 == NULL || *utf16 == '\0') {
+        if (length != NULL) {
+            *length = 0;
+        }
+        char *result = new char[1];
+        result[0] = '\0';
+        return result;
+    }
+
+    // Get length of resulting UTF-8 string
+    int length_ = WideCharToMultiByte(CP_UTF8, MB_ERR_INVALID_CHARS, utf16, -1, NULL, 0, NULL, NULL);
+    if (length_ == 0) {
+        // some error happened... for now pretend input string was NULL
+        return NULL;
+    }
+
+    // Allocate destination buffer for UTF-16 string
+    char *result = new char[length_];
+    // Do the conversion from UTF-8 to UTF-16
+    if (!WideCharToMultiByte(CP_UTF8, MB_ERR_INVALID_CHARS, utf16, -1, result, length_, NULL, NULL)) {
+        // some error happened... for now pretend input string was NULL
+        delete[] result;
+        return NULL;
+    }
+    
+    if (length != NULL) {
+        *length = length_;
+    }
+    return result;
+}
+
+ExecWideStrings::ExecWideStrings(JNIEnv* env, jobjectArray java_string_array)
+        : env_(env), java_array_(java_string_array), array_(NULL) {
+    if (java_array_ == NULL) {
+        return;
+    }
+
+    jsize length = env_->GetArrayLength(java_array_);
+    array_ = new wchar_t*[length + 1];
+    array_[length] = NULL;
+    for (jsize i = 0; i < length; ++i) {
+        ScopedLocalRef<jstring> java_string(env_, reinterpret_cast<jstring>(env_->GetObjectArrayElement(java_array_, i)));
+        // We need to pass these strings to const-unfriendly code.
+        array_[i] = const_cast<wchar_t*>(env->GetStringChars(java_string.get(), NULL));
+    }
+}
+
+ExecWideStrings::~ExecWideStrings() {
+    if (array_ == NULL) {
+        return;
+    }
+
+    // Temporarily clear any pending exception so we can clean up.
+    jthrowable pending_exception = env_->ExceptionOccurred();
+    if (pending_exception != NULL) {
+        env_->ExceptionClear();
+    }
+
+    jsize length = env_->GetArrayLength(java_array_);
+    for (jsize i = 0; i < length; ++i) {
+        ScopedLocalRef<jstring> java_string(env_, reinterpret_cast<jstring>(env_->GetObjectArrayElement(java_array_, i)));
+        env_->ReleaseStringChars(java_string.get(), array_[i]);
+    }
+    delete[] array_;
+
+    // Re-throw any pending exception.
+    if (pending_exception != NULL) {
+        env_->Throw(pending_exception);
+    }
+}
+
+wchar_t** ExecWideStrings::get() {
+    return array_;
+}
+
+
 #endif

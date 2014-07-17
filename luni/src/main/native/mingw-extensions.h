@@ -36,6 +36,7 @@
 #include <iphlpapi.h>
 
 #include "Portability.h"
+#include "jni.h"
 
 // errno.h
 
@@ -375,10 +376,10 @@ int setegid(gid_t egid);
 int setgid(gid_t gid);
 pid_t setsid();
 int setuid(uid_t euid);
-int chown(const char *path, uid_t owner, gid_t group);
-int lchown(const char *path, uid_t owner, gid_t group);
+int _wchown(const wchar_t *path, uid_t owner, gid_t group);
+int _wlchown(const wchar_t *path, uid_t owner, gid_t group);
 int fchown(int fd, uid_t owner, gid_t group);
-int symlink(const char *path1, const char *path2);
+int _wsymlink(const wchar_t *path1, const wchar_t *path2);
 int sysconf(int name);
 ssize_t pread64(int fd, void *buf, size_t count, off_t offset);
 ssize_t pwrite64(int fd, const void *buf, size_t count, off_t offset);
@@ -416,8 +417,8 @@ int ioctl(int fd, int request, void *argp);
 #define S_IXOTH					00001
 
 int fchmod(int fd, mode_t mode);
-int lstat(const char *path, struct stat *buf);
-int mkdir(const char *pathname, mode_t mode);
+int _wlstat(const wchar_t *path, struct _stat *buf);
+int _wmkdir(const wchar_t *pathname, mode_t mode);
 
 // statfs.h
 
@@ -437,7 +438,7 @@ struct statfs {
 };
 
 int fstatfs(int fd, struct statfs *buf);
-int statfs(const char *path, struct statfs *buf);
+int _wstatfs(const wchar_t *path, struct statfs *buf);
 
 // poll.h
 
@@ -510,15 +511,8 @@ int inet_pton(int af, const char *src, void *dst);
 const char *inet_ntop(int af, const void *src, char *dst, size_t cnt);
 // stdlib.h
 
-#define unsetenv(pname) SetEnvironmentVariable(pname, NULL)
-#define setenv(__pname,__pvalue,___overwrite) \
-({ \
-  int result; \
- if (___overwrite == 0 && getenv (__pname)) result = 0; \
-   else \
-     result = SetEnvironmentVariable (__pname,__pvalue); \
- result; \
-})
+int _wunsetenv(const wchar_t *pname);
+int _wsetenv(const wchar_t *name, const wchar_t *value, int replace);
 
 // termios.h
 
@@ -562,6 +556,7 @@ int mingw_connect(SOCKET s, const struct sockaddr *name, int namelen);
 
 // An equivalent for POSIX realpath function
 char *mingw_realpath(const char *path, char *resolved_path);
+wchar_t *mingw_realpath(const wchar_t *path, wchar_t *resolved_path);
 
 // Converts Windows API error code into errno code
 int windowsErrorToErrno(DWORD winErr);
@@ -572,5 +567,46 @@ const char* getErrnoDescription(int err);
 #ifdef MINGW_HAS_SECURE_API
 	extern "C" int strerror_r(int errno, char *buf, size_t len) ;
 #endif
+
+wchar_t* utf8_to_widechar(const char* utf8, int* length);
+char* widechar_to_utf8(const wchar_t* utf16, int* length);
+
+// A smart pointer that provides read-only access to a wide-char strings.
+// Its behaviour is identical to ScopedUtfChars (see ScopedUtfChars.h)
+class ScopedWideChars {
+    public:
+        ScopedWideChars(JNIEnv* env, jstring s);
+        ~ScopedWideChars();
+
+        const wchar_t* c_str() const;
+        const int size() const;
+        const wchar_t& operator[](int n) const;
+
+    private:
+        JNIEnv* env_;
+        jstring string_;
+        const wchar_t* data_;
+        
+        // Disallow copy and assignment.
+        ScopedWideChars(const ScopedWideChars&);
+        void operator=(const ScopedWideChars&);
+};
+
+// wchar_t version of ExecStrings, for more see Android's ExecStrings.h
+class ExecWideStrings {
+    public:
+        ExecWideStrings(JNIEnv* env, jobjectArray java_string_array);
+        ~ExecWideStrings();
+        wchar_t** get();
+
+    private:
+        JNIEnv* env_;
+        jobjectArray java_array_;
+        wchar_t** array_;
+
+        // Disallow copy and assignment.
+        ExecWideStrings(const ExecWideStrings&);
+        void operator=(const ExecWideStrings&);
+};
 
 #endif
