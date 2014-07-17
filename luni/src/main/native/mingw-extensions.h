@@ -568,40 +568,25 @@ const char* getErrnoDescription(int err);
 	extern "C" int strerror_r(int errno, char *buf, size_t len) ;
 #endif
 
-wchar_t* utf8_to_utf16(const char* utf8, int* length);
-char* utf16_to_utf8(const wchar_t* utf16, int* length);
+wchar_t* utf8_to_widechar(const char* utf8, int* length);
+char* widechar_to_utf8(const wchar_t* utf16, int* length);
 
 // A smart pointer that provides read-only access to a wide-char strings.
 // Its behaviour is identical to ScopedUtfChars (see ScopedUtfChars.h)
 class ScopedWideChars {
     public:
         ScopedWideChars(JNIEnv* env, jstring s);
+        ~ScopedWideChars();
 
-        ~ScopedWideChars() {
-            if (data_ != NULL) {
-                delete[] data_;
-            }
-        }
-        
-        
-        const wchar_t* c_str() const {
-            return data_;
-        }
-
-        const int size() const {
-            return length_;
-        }
-
-        const wchar_t& operator[](int n) const {
-            return data_[n];
-        }
+        const wchar_t* c_str() const;
+        const int size() const;
+        const wchar_t& operator[](int n) const;
 
     private:
-        wchar_t* data_;
-        int length_;
+        JNIEnv* env_;
+        jstring string_;
+        const wchar_t* data_;
         
-        void fillUtf16Data(const char* utf8);
-
         // Disallow copy and assignment.
         ScopedWideChars(const ScopedWideChars&);
         void operator=(const ScopedWideChars&);
@@ -612,9 +597,7 @@ class ExecWideStrings {
     public:
         ExecWideStrings(JNIEnv* env, jobjectArray java_string_array);
         ~ExecWideStrings();
-        wchar_t** get() {
-            return array_;
-        }
+        wchar_t** get();
 
     private:
         JNIEnv* env_;

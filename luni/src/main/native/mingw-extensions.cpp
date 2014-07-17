@@ -1839,27 +1839,35 @@ const char* getErrnoDescription(int err)
 
 int jniThrowNullPointerException(JNIEnv* env, const char* msg);
 
-ScopedWideChars::ScopedWideChars(JNIEnv* env, jstring s) {
-    data_ = NULL;
-    if (s != NULL) {
-        // We do the dance here because Java internal encoding might be not the one wide
-        // character encoding used by Windows, so we first convert internal encoding
-        // to UTF8 which in turn we convert to multibyte wide string using Windows API.
-        // This is somewhat slow but should be safe.
-        const char* utf_chars = env->GetStringUTFChars(s, NULL);
-        fillUtf16Data(utf_chars);
-        env->ReleaseStringUTFChars(s, utf_chars);
-    }
-    if (data_ == NULL) {
+ScopedWideChars::ScopedWideChars(JNIEnv* env, jstring s):
+        env_(env), string_(s) {
+    if (s == NULL) {
+        data_ = NULL;
         jniThrowNullPointerException(env, NULL);
+    } else {
+        data_ = env->GetStringChars(s, NULL);
     }
 }
 
-void ScopedWideChars::fillUtf16Data(const char* utf8) {
-    data_ = utf8_to_utf16(utf8, &length_);
+ScopedWideChars::~ScopedWideChars() {
+    if (data_) {
+        env_->ReleaseStringChars(string_, data_);
+    }
 }
 
-wchar_t* utf8_to_utf16(const char* utf8, int* length) {
+const wchar_t* ScopedWideChars::c_str() const {
+    return data_;
+}
+
+const int ScopedWideChars::size() const {
+    return wcslen(data_);
+}
+
+const wchar_t& ScopedWideChars::operator[](int n) const {
+    return data_[n];
+}
+
+wchar_t* utf8_to_widechar(const char* utf8, int* length) {
     // Special case of empty input string
     if (utf8 == NULL || *utf8 == '\0') {
         if (length != NULL) {
@@ -1892,7 +1900,7 @@ wchar_t* utf8_to_utf16(const char* utf8, int* length) {
     return result;
 }
 
-char* utf16_to_utf8(const wchar_t* utf16, int* length) {
+char* widechar_to_utf8(const wchar_t* utf16, int* length) {
     // Special case of empty input string
     if (utf16 == NULL || *utf16 == '\0') {
         if (length != NULL) {
@@ -1937,9 +1945,7 @@ ExecWideStrings::ExecWideStrings(JNIEnv* env, jobjectArray java_string_array)
     for (jsize i = 0; i < length; ++i) {
         ScopedLocalRef<jstring> java_string(env_, reinterpret_cast<jstring>(env_->GetObjectArrayElement(java_array_, i)));
         // We need to pass these strings to const-unfriendly code.
-        const char* utf_chars = env->GetStringUTFChars(java_string.get(), NULL);
-        array_[i] = utf8_to_utf16(utf_chars, NULL);
-        env->ReleaseStringUTFChars(java_string.get(), utf_chars);
+        array_[i] = const_cast<wchar_t*>(env->GetStringChars(java_string.get(), NULL));
     }
 }
 
@@ -1956,9 +1962,8 @@ ExecWideStrings::~ExecWideStrings() {
 
     jsize length = env_->GetArrayLength(java_array_);
     for (jsize i = 0; i < length; ++i) {
-        if (array_[i] != NULL) {
-            delete[] array_[i];
-        }
+        ScopedLocalRef<jstring> java_string(env_, reinterpret_cast<jstring>(env_->GetObjectArrayElement(java_array_, i)));
+        env_->ReleaseStringChars(java_string.get(), array_[i]);
     }
     delete[] array_;
 
@@ -1967,5 +1972,10 @@ ExecWideStrings::~ExecWideStrings() {
         env_->Throw(pending_exception);
     }
 }
+
+wchar_t** ExecWideStrings::get() {
+    return array_;
+}
+
 
 #endif
