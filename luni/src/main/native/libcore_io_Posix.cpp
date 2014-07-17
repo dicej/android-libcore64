@@ -167,6 +167,7 @@ struct addrinfo_deleter {
     #define u_chmod chmod
     #define u_chown chown
     #define u_execv execv
+    #define u_execve execve
     #define u_getenv getenv
     #define u_lchown lchown
     #define u_mkdir mkdir
