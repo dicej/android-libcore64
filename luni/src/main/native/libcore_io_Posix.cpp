@@ -134,6 +134,52 @@ struct addrinfo_deleter {
     _rc; })
 #endif
 
+// This is about necessity to use wide-char functions on Windows to correctly support Unicode
+#if defined(__MINGW32__) || defined(__MINGW64__)
+    #define ScopedPathChars ScopedWideChars
+    #define ExecPathStrings ExecWideStrings
+    #define u_open _wopen
+    #define u_lstat _wlstat
+    #define u_stat _wstat
+    #define u_access _waccess
+    #define u_chmod _wchmod
+    #define u_chown _wchown
+    #define u_execve _wexecve
+    #define u_execv _wexecv
+    #define u_getenv _wgetenv
+    #define u_lchown _wlchown
+    #define u_mkdir _wmkdir
+    #define u_remove _wremove
+    #define u_rename _wrename
+    #define u_setenv _wsetenv
+    #define u_statfs _wstatfs
+    #define u_symlink _wsymlink
+    #define u_unsetenv _wunsetenv
+#else
+    #define ScopedPathChars ScopedUtfChars
+    #define ExecPathStrings ExecStrings
+    #define u_open open
+    #define u_lstat lstat
+    #define u_stat stat
+    #define _stat stat
+    #define _fstat fstat
+    #define u_access access
+    #define u_chmod chmod
+    #define u_chown chown
+    #define u_execv execv
+    #define u_execve execve
+    #define u_getenv getenv
+    #define u_lchown lchown
+    #define u_mkdir mkdir
+    #define u_remove remove
+    #define u_rename rename
+    #define u_setenv setenv
+    #define u_statfs statfs
+    #define u_symlink symlink
+    #define u_unsetenv unsetenv
+#endif
+
+
 static void throwException(JNIEnv* env, jclass exceptionClass, jmethodID ctor3, jmethodID ctor2,
         const char* functionName, int error) {
     jthrowable cause = NULL;
@@ -282,7 +328,7 @@ static jobject makeStructPasswd(JNIEnv* env, const struct passwd& pw) {
             pw_name, static_cast<jint>(pw.pw_uid), static_cast<jint>(pw.pw_gid), pw_dir, pw_shell);
 }
 
-static jobject makeStructStat(JNIEnv* env, const struct stat& sb) {
+static jobject makeStructStat(JNIEnv* env, const struct _stat& sb) {
 #if !defined(__MINGW32__) && !defined(__MINGW64__)
 	jlong blksize = static_cast<jlong>(sb.st_blksize);
 	jlong blocks = static_cast<jlong>(sb.st_blocks);
@@ -387,13 +433,13 @@ static bool fillInetSocketAddress(JNIEnv* env, jint rc, jobject javaInetSocketAd
 }
 
 static jobject doStat(JNIEnv* env, jstring javaPath, bool isLstat) {
-    ScopedUtfChars path(env, javaPath);
+    ScopedPathChars path(env, javaPath);
     if (path.c_str() == NULL) {
         return NULL;
     }
-    struct stat sb;
-    int rc = isLstat ? TEMP_FAILURE_RETRY(lstat(path.c_str(), &sb))
-                     : TEMP_FAILURE_RETRY(stat(path.c_str(), &sb));
+    struct _stat sb;
+    int rc = isLstat ? TEMP_FAILURE_RETRY(u_lstat(path.c_str(), &sb))
+                     : TEMP_FAILURE_RETRY(u_stat(path.c_str(), &sb));
     if (rc == -1) {
         throwErrnoException(env, isLstat ? "lstat" : "stat");
         return NULL;
@@ -495,11 +541,11 @@ static jobject Posix_accept(JNIEnv* env, jobject, jobject javaFd, jobject javaIn
 }
 
 static jboolean Posix_access(JNIEnv* env, jobject, jstring javaPath, jint mode) {
-    ScopedUtfChars path(env, javaPath);
+    ScopedPathChars path(env, javaPath);
     if (path.c_str() == NULL) {
         return JNI_FALSE;
     }
-    int rc = TEMP_FAILURE_RETRY(access(path.c_str(), mode));
+    int rc = TEMP_FAILURE_RETRY(u_access(path.c_str(), mode));
     if (rc == -1) {
         throwErrnoException(env, "access");
     }
@@ -518,19 +564,19 @@ static void Posix_bind(JNIEnv* env, jobject, jobject javaFd, jobject javaAddress
 }
 
 static void Posix_chmod(JNIEnv* env, jobject, jstring javaPath, jint mode) {
-    ScopedUtfChars path(env, javaPath);
+    ScopedPathChars path(env, javaPath);
     if (path.c_str() == NULL) {
         return;
     }
-    throwIfMinusOne(env, "chmod", TEMP_FAILURE_RETRY(chmod(path.c_str(), mode)));
+    throwIfMinusOne(env, "chmod", TEMP_FAILURE_RETRY(u_chmod(path.c_str(), mode)));
 }
 
 static void Posix_chown(JNIEnv* env, jobject, jstring javaPath, jint uid, jint gid) {
-    ScopedUtfChars path(env, javaPath);
+    ScopedPathChars path(env, javaPath);
     if (path.c_str() == NULL) {
         return;
     }
-    throwIfMinusOne(env, "chown", TEMP_FAILURE_RETRY(chown(path.c_str(), uid, gid)));
+    throwIfMinusOne(env, "chown", TEMP_FAILURE_RETRY(u_chown(path.c_str(), uid, gid)));
 }
 
 static void Posix_close(JNIEnv* env, jobject, jobject javaFd) {
@@ -560,7 +606,13 @@ static void Posix_connect(JNIEnv* env, jobject, jobject javaFd, jobject javaAddr
     }
     const sockaddr* sa = reinterpret_cast<const sockaddr*>(&ss);
     // We don't need the return value because we'll already have thrown.
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
     (void) NET_FAILURE_RETRY(env, int, connect, javaFd, sa, sa_len);
+#else
+    // On Windows connect() may set errno to EWOULDBLOCK but Posix API awaits for EINPROGRESS,
+    // thus we have a wrapper
+    (void) NET_FAILURE_RETRY(env, int, mingw_connect, javaFd, sa, sa_len);
+#endif
 }
 
 static jobject Posix_dup(JNIEnv* env, jobject, jobject javaOldFd) {
@@ -581,26 +633,26 @@ static jobjectArray Posix_environ(JNIEnv* env, jobject) {
 }
 
 static void Posix_execve(JNIEnv* env, jobject, jstring javaFilename, jobjectArray javaArgv, jobjectArray javaEnvp) {
-    ScopedUtfChars path(env, javaFilename);
+    ScopedPathChars path(env, javaFilename);
     if (path.c_str() == NULL) {
         return;
     }
 
-    ExecStrings argv(env, javaArgv);
-    ExecStrings envp(env, javaEnvp);
-    execve(path.c_str(), argv.get(), envp.get());
+    ExecPathStrings argv(env, javaArgv);
+    ExecPathStrings envp(env, javaEnvp);
+    u_execve(path.c_str(), argv.get(), envp.get());
 
     throwErrnoException(env, "execve");
 }
 
 static void Posix_execv(JNIEnv* env, jobject, jstring javaFilename, jobjectArray javaArgv) {
-    ScopedUtfChars path(env, javaFilename);
+    ScopedPathChars path(env, javaFilename);
     if (path.c_str() == NULL) {
         return;
     }
 
-    ExecStrings argv(env, javaArgv);
-    execv(path.c_str(), argv.get());
+    ExecPathStrings argv(env, javaArgv);
+    u_execv(path.c_str(), argv.get());
 
     throwErrnoException(env, "execv");
 }
@@ -659,8 +711,8 @@ static void Posix_fdatasync(JNIEnv* env, jobject, jobject javaFd) {
 
 static jobject Posix_fstat(JNIEnv* env, jobject, jobject javaFd) {
     int fd = jniGetFDFromFileDescriptor(env, javaFd);
-    struct stat sb;
-    int rc = TEMP_FAILURE_RETRY(fstat(fd, &sb));
+    struct _stat sb;
+    int rc = TEMP_FAILURE_RETRY(_fstat(fd, &sb));
     if (rc == -1) {
         throwErrnoException(env, "fstat");
         return NULL;
@@ -773,11 +825,19 @@ static jint Posix_getgid(JNIEnv*, jobject) {
 }
 
 static jstring Posix_getenv(JNIEnv* env, jobject, jstring javaName) {
-    ScopedUtfChars name(env, javaName);
+    ScopedPathChars name(env, javaName);
     if (name.c_str() == NULL) {
         return NULL;
     }
-    return env->NewStringUTF(getenv(name.c_str()));
+
+    #if defined(__MINGW32__) || defined(__MINGW64__)
+    char* utf8value = widechar_to_utf8(u_getenv(name.c_str()), NULL);
+    jstring result = env->NewStringUTF(utf8value);
+    delete[] utf8value;
+    return result;
+    #else
+    return env->NewStringUTF(u_getenv(name.c_str()));
+    #endif
 }
 
 static jstring Posix_getnameinfo(JNIEnv* env, jobject, jobject javaAddress, jint flags) {
@@ -982,11 +1042,11 @@ static void Posix_kill(JNIEnv* env, jobject, jint pid, jint sig) {
 }
 
 static void Posix_lchown(JNIEnv* env, jobject, jstring javaPath, jint uid, jint gid) {
-    ScopedUtfChars path(env, javaPath);
+    ScopedPathChars path(env, javaPath);
     if (path.c_str() == NULL) {
         return;
     }
-    throwIfMinusOne(env, "lchown", TEMP_FAILURE_RETRY(lchown(path.c_str(), uid, gid)));
+    throwIfMinusOne(env, "lchown", TEMP_FAILURE_RETRY(u_lchown(path.c_str(), uid, gid)));
 }
 
 static void Posix_listen(JNIEnv* env, jobject, jobject javaFd, jint backlog) {
@@ -1014,11 +1074,11 @@ static void Posix_mincore(JNIEnv* env, jobject, jlong address, jlong byteCount, 
 }
 
 static void Posix_mkdir(JNIEnv* env, jobject, jstring javaPath, jint mode) {
-    ScopedUtfChars path(env, javaPath);
+    ScopedPathChars path(env, javaPath);
     if (path.c_str() == NULL) {
         return;
     }
-    throwIfMinusOne(env, "mkdir", TEMP_FAILURE_RETRY(mkdir(path.c_str(), mode)));
+    throwIfMinusOne(env, "mkdir", TEMP_FAILURE_RETRY(u_mkdir(path.c_str(), mode)));
 }
 
 static void Posix_mlock(JNIEnv* env, jobject, jlong address, jlong byteCount) {
@@ -1052,14 +1112,14 @@ static void Posix_munmap(JNIEnv* env, jobject, jlong address, jlong byteCount) {
 }
 
 static jobject Posix_open(JNIEnv* env, jobject, jstring javaPath, jint flags, jint mode) {
-    ScopedUtfChars path(env, javaPath);
+    ScopedPathChars path(env, javaPath);
     if (path.c_str() == NULL) {
         return NULL;
     }
     #if defined(__MINGW32__) || defined(__MINGW64__)
     flags |= O_BINARY;
     #endif
-    int fd = throwIfMinusOne(env, "open", TEMP_FAILURE_RETRY(open(path.c_str(), flags, mode)));
+    int fd = throwIfMinusOne(env, "open", TEMP_FAILURE_RETRY(u_open(path.c_str(), flags, mode)));
     return fd != -1 ? jniCreateFileDescriptor(env, fd) : NULL;
 }
 
@@ -1189,23 +1249,23 @@ static jint Posix_recvfromBytes(JNIEnv* env, jobject, jobject javaFd, jobject ja
 }
 
 static void Posix_remove(JNIEnv* env, jobject, jstring javaPath) {
-    ScopedUtfChars path(env, javaPath);
+    ScopedPathChars path(env, javaPath);
     if (path.c_str() == NULL) {
         return;
     }
-    throwIfMinusOne(env, "remove", TEMP_FAILURE_RETRY(remove(path.c_str())));
+    throwIfMinusOne(env, "remove", TEMP_FAILURE_RETRY(u_remove(path.c_str())));
 }
 
 static void Posix_rename(JNIEnv* env, jobject, jstring javaOldPath, jstring javaNewPath) {
-    ScopedUtfChars oldPath(env, javaOldPath);
+    ScopedPathChars oldPath(env, javaOldPath);
     if (oldPath.c_str() == NULL) {
         return;
     }
-    ScopedUtfChars newPath(env, javaNewPath);
+    ScopedPathChars newPath(env, javaNewPath);
     if (newPath.c_str() == NULL) {
         return;
     }
-    throwIfMinusOne(env, "rename", TEMP_FAILURE_RETRY(rename(oldPath.c_str(), newPath.c_str())));
+    throwIfMinusOne(env, "rename", TEMP_FAILURE_RETRY(u_rename(oldPath.c_str(), newPath.c_str())));
 }
 
 static jlong Posix_sendfile(JNIEnv* env, jobject, jobject javaOutFd, jobject javaInFd, jobject javaOffset, jlong byteCount) {
@@ -1249,15 +1309,15 @@ static void Posix_setegid(JNIEnv* env, jobject, jint egid) {
 }
 
 static void Posix_setenv(JNIEnv* env, jobject, jstring javaName, jstring javaValue, jboolean overwrite) {
-    ScopedUtfChars name(env, javaName);
+    ScopedPathChars name(env, javaName);
     if (name.c_str() == NULL) {
         return;
     }
-    ScopedUtfChars value(env, javaValue);
+    ScopedPathChars value(env, javaValue);
     if (value.c_str() == NULL) {
         return;
     }
-    throwIfMinusOne(env, "setenv", setenv(name.c_str(), value.c_str(), overwrite));
+    throwIfMinusOne(env, "setenv", u_setenv(name.c_str(), value.c_str(), overwrite));
 }
 
 static void Posix_seteuid(JNIEnv* env, jobject, jint euid) {
@@ -1430,12 +1490,12 @@ static jobject Posix_stat(JNIEnv* env, jobject, jstring javaPath) {
 }
 
 static jobject Posix_statfs(JNIEnv* env, jobject, jstring javaPath) {
-    ScopedUtfChars path(env, javaPath);
+    ScopedPathChars path(env, javaPath);
     if (path.c_str() == NULL) {
         return NULL;
     }
     struct statfs sb;
-    int rc = TEMP_FAILURE_RETRY(statfs(path.c_str(), &sb));
+    int rc = TEMP_FAILURE_RETRY(u_statfs(path.c_str(), &sb));
     if (rc == -1) {
         throwErrnoException(env, "statfs");
         return NULL;
@@ -1454,15 +1514,15 @@ static jstring Posix_strsignal(JNIEnv* env, jobject, jint signal) {
 }
 
 static void Posix_symlink(JNIEnv* env, jobject, jstring javaOldPath, jstring javaNewPath) {
-    ScopedUtfChars oldPath(env, javaOldPath);
+    ScopedPathChars oldPath(env, javaOldPath);
     if (oldPath.c_str() == NULL) {
         return;
     }
-    ScopedUtfChars newPath(env, javaNewPath);
+    ScopedPathChars newPath(env, javaNewPath);
     if (newPath.c_str() == NULL) {
         return;
     }
-    throwIfMinusOne(env, "symlink", TEMP_FAILURE_RETRY(symlink(oldPath.c_str(), newPath.c_str())));
+    throwIfMinusOne(env, "symlink", TEMP_FAILURE_RETRY(u_symlink(oldPath.c_str(), newPath.c_str())));
 }
 
 static jlong Posix_sysconf(JNIEnv* env, jobject, jint name) {
@@ -1498,11 +1558,11 @@ static jobject Posix_uname(JNIEnv* env, jobject) {
 }
 
 static void Posix_unsetenv(JNIEnv* env, jobject, jstring javaName) {
-    ScopedUtfChars name(env, javaName);
+    ScopedPathChars name(env, javaName);
     if (name.c_str() == NULL) {
         return;
     }
-    throwIfMinusOne(env, "unsetenv", unsetenv(name.c_str()));
+    throwIfMinusOne(env, "unsetenv", u_unsetenv(name.c_str()));
 }
 
 static jint Posix_waitpid(JNIEnv* env, jobject, jint pid, jobject javaStatus, jint options) {
