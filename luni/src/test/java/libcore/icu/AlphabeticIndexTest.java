@@ -20,8 +20,7 @@ import java.util.Locale;
 
 public class AlphabeticIndexTest extends junit.framework.TestCase {
   private static AlphabeticIndex.ImmutableIndex createIndex(Locale locale) {
-    return new AlphabeticIndex(locale).addLabels(Locale.US)
-        .getImmutableIndex();
+    return new AlphabeticIndex(locale).addLabels(Locale.US).getImmutableIndex();
   }
 
   private static void assertHasLabel(AlphabeticIndex.ImmutableIndex ii, String string, String expectedLabel) {
@@ -51,6 +50,10 @@ public class AlphabeticIndexTest extends junit.framework.TestCase {
 
     // Kanji (sorts to inflow section)
     assertHasLabel(ja, "\u65e5", "");
+
+    // http://bugs.icu-project.org/trac/ticket/10423 / http://b/10809397
+    assertHasLabel(ja, "\u95c7", "");
+    assertHasLabel(ja, "\u308f", "わ");
 
     // English
     assertHasLabel(ja, "Smith", "S");
@@ -104,12 +107,13 @@ public class AlphabeticIndexTest extends junit.framework.TestCase {
   }
 
   public void test_de() throws Exception {
-    // German: [A-S,Sch,St,T-Z] (no ß or umlauted characters in standard alphabet)
+    // German: [A-Z] (no ß or umlauted characters in standard alphabet)
     AlphabeticIndex.ImmutableIndex de = createIndex(Locale.GERMAN);
     assertHasLabel(de, "ßind", "S");
+    // We no longer split out "S", "Sch", and "St".
     assertHasLabel(de, "Sacher", "S");
-    assertHasLabel(de, "Schiller", "Sch");
-    assertHasLabel(de, "Steiff", "St");
+    assertHasLabel(de, "Schiller", "S");
+    assertHasLabel(de, "Steiff", "S");
   }
 
   public void test_th() throws Exception {
@@ -136,27 +140,32 @@ public class AlphabeticIndexTest extends junit.framework.TestCase {
 
   public void test_zh_CN() throws Exception {
     // Simplified Chinese (default collator Pinyin): [A-Z]
-    // Shen/Chen (simplified): should be, usually, 'S' for name collator and 'C' for apps/other
     AlphabeticIndex.ImmutableIndex zh_CN = createIndex(new Locale("zh", "CN"));
 
     // Jia/Gu: should be, usually, 'J' for name collator and 'G' for apps/other
     assertHasLabel(zh_CN, "\u8d3e", "J");
 
-    // Shen/Chen
-    assertHasLabel(zh_CN, "\u6c88", "C"); // icu4c 50 does not specialize for names.
+    // Shen/Chen (simplified): should usually be 'S' for names and 'C' for apps/other.
+    // icu4c does not specialize for names and defaults to 'C'.
+    // Some OEMs prefer to default to 'S'.
+    // We allow either to pass CTS since neither choice is right all the time.
+    // assertHasLabel(zh_CN, "\u6c88", "C");
+    String shenChenLabel = zh_CN.getBucketLabel(zh_CN.getBucketIndex("\u6c88"));
+    assertTrue(shenChenLabel.equals("C") || shenChenLabel.equals("S"));
+
     // Shen/Chen (traditional)
     assertHasLabel(zh_CN, "\u700b", "S");
   }
 
-  public void test_zh_TW() throws Exception {
-    // Traditional Chinese
+  public void test_zh_HK() throws Exception {
+    // Traditional Chinese (strokes).
     // …, [1-33, 35, 36, 39, 48]劃, …
     // Shen/Chen
-    AlphabeticIndex.ImmutableIndex zh_TW = createIndex(new Locale("zh", "TW"));
-    assertHasLabel(zh_TW, "\u6c88", "7\u5283");
-    assertHasLabel(zh_TW, "\u700b", "18\u5283");
+    AlphabeticIndex.ImmutableIndex zh_HK = createIndex(new Locale("zh", "HK"));
+    assertHasLabel(zh_HK, "\u6c88", "7\u5283");
+    assertHasLabel(zh_HK, "\u700b", "18\u5283");
     // Jia/Gu
-    assertHasLabel(zh_TW, "\u8d3e", "10\u5283");
+    assertHasLabel(zh_HK, "\u8d3e", "10\u5283");
   }
 
   public void test_constructor_NPE() throws Exception {
@@ -174,6 +183,25 @@ public class AlphabeticIndexTest extends junit.framework.TestCase {
       fail();
     } catch (NullPointerException expected) {
     }
+  }
+
+  // ICU 51 default max label count is 99. Test to make sure can create an
+  // index with a larger number of labels.
+  public void test_setMaxLabelCount() throws Exception {
+    final int MAX_LABEL_COUNT = 500;
+    AlphabeticIndex ai = new AlphabeticIndex(Locale.US)
+      .setMaxLabelCount(MAX_LABEL_COUNT)
+      .addLabels(Locale.JAPANESE)
+      .addLabels(Locale.KOREAN)
+      .addLabels(new Locale("th"))
+      .addLabels(new Locale("ar"))
+      .addLabels(new Locale("he"))
+      .addLabels(new Locale("el"))
+      .addLabels(new Locale("ru"));
+    assertEquals(MAX_LABEL_COUNT, ai.getMaxLabelCount());
+    assertEquals(208, ai.getBucketCount());
+    AlphabeticIndex.ImmutableIndex ii = ai.getImmutableIndex();
+    assertEquals(ai.getBucketCount(), ii.getBucketCount());
   }
 
   public void test_getBucketIndex_NPE() throws Exception {

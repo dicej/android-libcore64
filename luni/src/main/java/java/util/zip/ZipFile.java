@@ -20,7 +20,6 @@ package java.util.zip;
 import dalvik.system.CloseGuard;
 import java.io.BufferedInputStream;
 import java.io.Closeable;
-import java.io.EOFException;
 import java.io.DataInputStream;
 import java.io.File;
 import java.io.IOException;
@@ -33,6 +32,7 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import libcore.io.BufferIterator;
 import libcore.io.HeapBufferIterator;
+import libcore.io.IoUtils;
 import libcore.io.Streams;
 
 /**
@@ -40,7 +40,7 @@ import libcore.io.Streams;
  * the zip file's central directory up front (from the constructor), but if you're using
  * {@link #getEntry} to look up multiple files by name, you get the benefit of this index.
  *
- * <p>If you only want to iterate through all the files (using {@link #entries}, you should
+ * <p>If you only want to iterate through all the files (using {@link #entries()}, you should
  * consider {@link ZipInputStream}, which provides stream-like read access to a zip file and
  * has a lower up-front cost because you don't pay to build an in-memory index.
  *
@@ -109,6 +109,9 @@ public class ZipFile implements Closeable, ZipConstants {
 
     /**
      * Constructs a new {@code ZipFile} allowing read access to the contents of the given file.
+     *
+     * <p>UTF-8 is used to decode all comments and entry names in the file.
+     *
      * @throws ZipException if a zip error occurs.
      * @throws IOException if an {@code IOException} occurs.
      */
@@ -118,6 +121,9 @@ public class ZipFile implements Closeable, ZipConstants {
 
     /**
      * Constructs a new {@code ZipFile} allowing read access to the contents of the given file.
+     *
+     * <p>UTF-8 is used to decode all comments and entry names in the file.
+     *
      * @throws IOException if an IOException occurs.
      */
     public ZipFile(String name) throws IOException {
@@ -126,9 +132,11 @@ public class ZipFile implements Closeable, ZipConstants {
 
     /**
      * Constructs a new {@code ZipFile} allowing access to the given file.
-     * The {@code mode} must be either {@code OPEN_READ} or {@code OPEN_READ|OPEN_DELETE}.
      *
-     * <p>If the {@code OPEN_DELETE} flag is supplied, the file will be deleted at or before the
+     * <p>UTF-8 is used to decode all comments and entry names in the file.
+     *
+     * <p>The {@code mode} must be either {@code OPEN_READ} or {@code OPEN_READ|OPEN_DELETE}.
+     * If the {@code OPEN_DELETE} flag is supplied, the file will be deleted at or before the
      * time that the {@code ZipFile} is closed (the contents will remain accessible until
      * this {@code ZipFile} is closed); it also calls {@code File.deleteOnExit}.
      *
@@ -149,7 +157,19 @@ public class ZipFile implements Closeable, ZipConstants {
 
         raf = new RandomAccessFile(filename, "r");
 
-        readCentralDir();
+        // Make sure to close the RandomAccessFile if reading the central directory fails.
+        boolean mustCloseFile = true;
+        try {
+            readCentralDir();
+
+            // Read succeeded so do not close the underlying RandomAccessFile.
+            mustCloseFile = false;
+        } finally {
+            if (mustCloseFile) {
+                IoUtils.closeQuietly(raf);
+            }
+        }
+
         guard.open("close");
     }
 
@@ -274,30 +294,41 @@ public class ZipFile implements Closeable, ZipConstants {
         RandomAccessFile localRaf = raf;
         synchronized (localRaf) {
             // We don't know the entry data's start position. All we have is the
-            // position of the entry's local header. At position 6 we find the
-            // General Purpose Bit Flag.
+            // position of the entry's local header.
             // http://www.pkware.com/documents/casestudies/APPNOTE.TXT
-            RAFStream rafStream= new RAFStream(localRaf, entry.localHeaderRelOffset + 6);
+            RAFStream rafStream = new RAFStream(localRaf, entry.localHeaderRelOffset);
             DataInputStream is = new DataInputStream(rafStream);
+
+            final int localMagic = Integer.reverseBytes(is.readInt());
+            if (localMagic != LOCSIG) {
+                throwZipException("Local File Header", localMagic);
+            }
+
+            is.skipBytes(2);
+
+            // At position 6 we find the General Purpose Bit Flag.
             int gpbf = Short.reverseBytes(is.readShort()) & 0xffff;
             if ((gpbf & ZipFile.GPBF_UNSUPPORTED_MASK) != 0) {
                 throw new ZipException("Invalid General Purpose Bit Flag: " + gpbf);
             }
 
-            // At position 28 we find the length of the extra data. In some cases
-            // this length differs from the one coming in the central header.
-            is.skipBytes(20);
-            int localExtraLenOrWhatever = Short.reverseBytes(is.readShort()) & 0xffff;
+            // Offset 26 has the file name length, and offset 28 has the extra field length.
+            // These lengths can differ from the ones in the central header.
+            is.skipBytes(18);
+            int fileNameLength = Short.reverseBytes(is.readShort()) & 0xffff;
+            int extraFieldLength = Short.reverseBytes(is.readShort()) & 0xffff;
             is.close();
 
-            // Skip the name and this "extra" data or whatever it is:
-            rafStream.skip(entry.nameLength + localExtraLenOrWhatever);
-            rafStream.length = rafStream.offset + entry.compressedSize;
-            if (entry.compressionMethod == ZipEntry.DEFLATED) {
-                int bufSize = Math.max(1024, (int)Math.min(entry.getSize(), 65535L));
-                return new ZipInflaterInputStream(rafStream, new Inflater(true), bufSize, entry);
-            } else {
+            // Skip the variable-size file name and extra field data.
+            rafStream.skip(fileNameLength + extraFieldLength);
+
+            if (entry.compressionMethod == ZipEntry.STORED) {
+                rafStream.endOffset = rafStream.offset + entry.size;
                 return rafStream;
+            } else {
+                rafStream.endOffset = rafStream.offset + entry.compressedSize;
+                int bufSize = Math.max(1024, (int) Math.min(entry.getSize(), 65535L));
+                return new ZipInflaterInputStream(rafStream, new Inflater(true), bufSize, entry);
             }
         }
     }
@@ -345,21 +376,29 @@ public class ZipFile implements Closeable, ZipConstants {
             throw new ZipException("File too short to be a zip file: " + raf.length());
         }
 
+        raf.seek(0);
+        final int headerMagic = Integer.reverseBytes(raf.readInt());
+        if (headerMagic == ENDSIG) {
+            throw new ZipException("Empty zip archive not supported");
+        }
+        if (headerMagic != LOCSIG) {
+            throw new ZipException("Not a zip archive");
+        }
+
         long stopOffset = scanOffset - 65536;
         if (stopOffset < 0) {
             stopOffset = 0;
         }
 
-        final int ENDHEADERMAGIC = 0x06054b50;
         while (true) {
             raf.seek(scanOffset);
-            if (Integer.reverseBytes(raf.readInt()) == ENDHEADERMAGIC) {
+            if (Integer.reverseBytes(raf.readInt()) == ENDSIG) {
                 break;
             }
 
             scanOffset--;
             if (scanOffset < stopOffset) {
-                throw new ZipException("EOCD not found; not a zip file?");
+                throw new ZipException("End Of Central Directory signature not found");
             }
         }
 
@@ -379,7 +418,7 @@ public class ZipFile implements Closeable, ZipConstants {
         int commentLength = it.readShort() & 0xffff;
 
         if (numEntries != totalNumEntries || diskNumber != 0 || diskWithCentralDir != 0) {
-            throw new ZipException("spanned archives not supported");
+            throw new ZipException("Spanned archives not supported");
         }
 
         if (commentLength > 0) {
@@ -396,9 +435,20 @@ public class ZipFile implements Closeable, ZipConstants {
         BufferedInputStream bufferedStream = new BufferedInputStream(rafStream, 4096);
         byte[] hdrBuf = new byte[CENHDR]; // Reuse the same buffer for each entry.
         for (int i = 0; i < numEntries; ++i) {
-            ZipEntry newEntry = new ZipEntry(hdrBuf, bufferedStream);
-            entries.put(newEntry.getName(), newEntry);
+            ZipEntry newEntry = new ZipEntry(hdrBuf, bufferedStream, StandardCharsets.UTF_8);
+            if (newEntry.localHeaderRelOffset >= centralDirOffset) {
+                throw new ZipException("Local file header offset is after central directory");
+            }
+            String entryName = newEntry.getName();
+            if (entries.put(entryName, newEntry) != null) {
+                throw new ZipException("Duplicate entry name: " + entryName);
+            }
         }
+    }
+
+    static void throwZipException(String msg, int magic) throws ZipException {
+        final String hexString = IntegralToString.intToHexString(magic, true, 8);
+        throw new ZipException(msg + " signature not found; was " + hexString);
     }
 
     /**
@@ -408,20 +458,27 @@ public class ZipFile implements Closeable, ZipConstants {
      * collisions.)
      *
      * <p>We could support mark/reset, but we don't currently need them.
+     *
+     * @hide
      */
-    static class RAFStream extends InputStream {
+    public static class RAFStream extends InputStream {
         private final RandomAccessFile sharedRaf;
-        private long length;
+        private long endOffset;
         private long offset;
 
-        public RAFStream(RandomAccessFile raf, long initialOffset) throws IOException {
+
+        public RAFStream(RandomAccessFile raf, long initialOffset, long endOffset) {
             sharedRaf = raf;
             offset = initialOffset;
-            length = raf.length();
+            this.endOffset = endOffset;
+        }
+
+        public RAFStream(RandomAccessFile raf, long initialOffset) throws IOException {
+            this(raf, initialOffset, raf.length());
         }
 
         @Override public int available() throws IOException {
-            return (offset < length ? 1 : 0);
+            return (offset < endOffset ? 1 : 0);
         }
 
         @Override public int read() throws IOException {
@@ -430,10 +487,11 @@ public class ZipFile implements Closeable, ZipConstants {
 
         @Override public int read(byte[] buffer, int byteOffset, int byteCount) throws IOException {
             synchronized (sharedRaf) {
-                sharedRaf.seek(offset);
-                if (byteCount > length - offset) {
-                    byteCount = (int) (length - offset);
+                final long length = endOffset - offset;
+                if (byteCount > length) {
+                    byteCount = (int) length;
                 }
+                sharedRaf.seek(offset);
                 int count = sharedRaf.read(buffer, byteOffset, byteCount);
                 if (count > 0) {
                     offset += count;
@@ -445,8 +503,8 @@ public class ZipFile implements Closeable, ZipConstants {
         }
 
         @Override public long skip(long byteCount) throws IOException {
-            if (byteCount > length - offset) {
-                byteCount = length - offset;
+            if (byteCount > endOffset - offset) {
+                byteCount = endOffset - offset;
             }
             offset += byteCount;
             return byteCount;
@@ -454,7 +512,7 @@ public class ZipFile implements Closeable, ZipConstants {
 
         public int fill(Inflater inflater, int nativeEndBufSize) throws IOException {
             synchronized (sharedRaf) {
-                int len = Math.min((int) (length - offset), nativeEndBufSize);
+                int len = Math.min((int) (endOffset - offset), nativeEndBufSize);
                 int cnt = inflater.setFileInput(sharedRaf.getFD(), offset, nativeEndBufSize);
                 // setFileInput read from the file, so we need to get the OS and RAFStream back
                 // in sync...
@@ -464,7 +522,8 @@ public class ZipFile implements Closeable, ZipConstants {
         }
     }
 
-    static class ZipInflaterInputStream extends InflaterInputStream {
+    /** @hide */
+    public static class ZipInflaterInputStream extends InflaterInputStream {
         private final ZipEntry entry;
         private long bytesRead = 0;
 
@@ -474,8 +533,19 @@ public class ZipFile implements Closeable, ZipConstants {
         }
 
         @Override public int read(byte[] buffer, int byteOffset, int byteCount) throws IOException {
-            int i = super.read(buffer, byteOffset, byteCount);
-            if (i != -1) {
+            final int i;
+            try {
+                i = super.read(buffer, byteOffset, byteCount);
+            } catch (IOException e) {
+                throw new IOException("Error reading data for " + entry.getName() + " near offset "
+                        + bytesRead, e);
+            }
+            if (i == -1) {
+                if (entry.size != bytesRead) {
+                    throw new IOException("Size mismatch on inflated file: " + bytesRead + " vs "
+                            + entry.size);
+                }
+            } else {
                 bytesRead += i;
             }
             return i;

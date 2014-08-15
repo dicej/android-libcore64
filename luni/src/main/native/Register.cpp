@@ -16,13 +16,14 @@
 
 #define LOG_TAG "libcore" // We'll be next to "dalvikvm" in the log; make the distinction clear.
 
+#include "cutils/log.h"
 #include "JniConstants.h"
 #include "ScopedLocalFrame.h"
 
 #include <stdlib.h>
 
 // DalvikVM calls this on startup, so we can statically register all our native methods.
-int JNI_OnLoad(JavaVM* vm, void*) {
+jint JNI_OnLoad(JavaVM* vm, void*) {
     JNIEnv* env;
     if (vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK) {
         ALOGE("JavaVM::GetEnv() failed");
@@ -32,7 +33,7 @@ int JNI_OnLoad(JavaVM* vm, void*) {
     ScopedLocalFrame localFrame(env);
 
 #define REGISTER(FN) extern void FN(JNIEnv*); FN(env)
-    REGISTER(register_java_io_Console);
+    REGISTER(register_android_system_OsConstants);
     REGISTER(register_java_io_File);
     REGISTER(register_java_io_ObjectStreamClass);
     REGISTER(register_java_lang_Character);
@@ -48,6 +49,7 @@ int JNI_OnLoad(JavaVM* vm, void*) {
     REGISTER(register_java_nio_ByteOrder);
     REGISTER(register_java_nio_charset_Charsets);
     REGISTER(register_java_text_Bidi);
+    REGISTER(register_java_util_jar_StrictJarFile);
     REGISTER(register_java_util_regex_Matcher);
     REGISTER(register_java_util_regex_Pattern);
     REGISTER(register_java_util_zip_Adler32);
@@ -55,6 +57,7 @@ int JNI_OnLoad(JavaVM* vm, void*) {
     REGISTER(register_java_util_zip_Deflater);
     REGISTER(register_java_util_zip_Inflater);
     REGISTER(register_libcore_icu_AlphabeticIndex);
+    REGISTER(register_libcore_icu_DateIntervalFormat);
     REGISTER(register_libcore_icu_ICU);
     REGISTER(register_libcore_icu_NativeBreakIterator);
     REGISTER(register_libcore_icu_NativeCollation);
@@ -68,14 +71,12 @@ int JNI_OnLoad(JavaVM* vm, void*) {
     REGISTER(register_libcore_io_AsynchronousCloseMonitor);
     REGISTER(register_libcore_io_Libcore);
     REGISTER(register_libcore_io_Memory);
-    REGISTER(register_libcore_io_OsConstants);
     REGISTER(register_libcore_io_Posix);
     REGISTER(register_libcore_io_Windows);
-    REGISTER(register_libcore_net_RawSocket);
     REGISTER(register_org_apache_harmony_dalvik_NativeTestTarget);
     REGISTER(register_org_apache_harmony_xml_ExpatParser);
-    REGISTER(register_org_conscrypt_NativeCrypto);
     REGISTER(register_sun_misc_Unsafe);
 #undef REGISTER
+
     return JNI_VERSION_1_6;
 }

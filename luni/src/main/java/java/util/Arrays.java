@@ -1319,31 +1319,25 @@ public class Arrays {
         /*
          * element is an array
          */
-        if (!cl.isPrimitive()) {
+        if (element instanceof Object[]) {
             return deepHashCode((Object[]) element);
-        }
-        if (cl.equals(int.class)) {
+        } else if (cl == int.class) {
             return hashCode((int[]) element);
-        }
-        if (cl.equals(char.class)) {
+        } else if (cl == char.class) {
             return hashCode((char[]) element);
-        }
-        if (cl.equals(boolean.class)) {
+        } else if (cl == boolean.class) {
             return hashCode((boolean[]) element);
-        }
-        if (cl.equals(byte.class)) {
+        } else if (cl == byte.class) {
             return hashCode((byte[]) element);
-        }
-        if (cl.equals(long.class)) {
+        } else if (cl == long.class) {
             return hashCode((long[]) element);
-        }
-        if (cl.equals(float.class)) {
+        } else if (cl == float.class) {
             return hashCode((float[]) element);
-        }
-        if (cl.equals(double.class)) {
+        } else if (cl == double.class) {
             return hashCode((double[]) element);
+        } else {
+            return hashCode((short[]) element);
         }
-        return hashCode((short[]) element);
     }
 
     /**
@@ -1673,32 +1667,25 @@ public class Arrays {
         /*
          * compare as arrays
          */
-        if (!cl1.isPrimitive()) {
+        if (e1 instanceof Object[]) {
             return deepEquals((Object[]) e1, (Object[]) e2);
-        }
-
-        if (cl1.equals(int.class)) {
+        } else if (cl1 == int.class) {
             return equals((int[]) e1, (int[]) e2);
-        }
-        if (cl1.equals(char.class)) {
+        } else if (cl1 == char.class) {
             return equals((char[]) e1, (char[]) e2);
-        }
-        if (cl1.equals(boolean.class)) {
+        } else if (cl1 == boolean.class) {
             return equals((boolean[]) e1, (boolean[]) e2);
-        }
-        if (cl1.equals(byte.class)) {
+        } else if (cl1 == byte.class) {
             return equals((byte[]) e1, (byte[]) e2);
-        }
-        if (cl1.equals(long.class)) {
+        } else if (cl1 == long.class) {
             return equals((long[]) e1, (long[]) e2);
-        }
-        if (cl1.equals(float.class)) {
+        } else if (cl1 == float.class) {
             return equals((float[]) e1, (float[]) e2);
-        }
-        if (cl1.equals(double.class)) {
+        } else if (cl1 == double.class) {
             return equals((double[]) e1, (double[]) e2);
+        } else {
+            return equals((short[]) e1, (short[]) e2);
         }
-        return equals((short[]) e1, (short[]) e2);
     }
 
     /**
@@ -1971,32 +1958,22 @@ public class Arrays {
     /**
      * Sorts the specified array in ascending natural order.
      *
-     * @param array
-     *            the {@code Object} array to be sorted.
-     * @throws ClassCastException
-     *                if an element in the array does not implement {@code Comparable}
-     *                or if some elements cannot be compared to each other.
-     * @see #sort(Object[], int, int)
+     * @throws ClassCastException if any element does not implement {@code Comparable},
+     *     or if {@code compareTo} throws for any pair of elements.
      */
     public static void sort(Object[] array) {
         ComparableTimSort.sort(array);
     }
 
     /**
-     * Sorts the specified range in the array in ascending natural order. All
-     * elements must implement the {@code Comparable} interface and must be
-     * comparable to each other without a {@code ClassCastException} being
-     * thrown.
+     * Sorts the specified range in the array in ascending natural order.
      *
-     * @param array
-     *            the {@code Object} array to be sorted.
      * @param start
      *            the start index to sort.
      * @param end
      *            the last + 1 index to sort.
-     * @throws ClassCastException
-     *                if an element in the array does not implement {@code Comparable}
-     *                or some elements cannot be compared to each other.
+     * @throws ClassCastException if any element does not implement {@code Comparable},
+     *     or if {@code compareTo} throws for any pair of elements.
      * @throws IllegalArgumentException
      *                if {@code start > end}.
      * @throws ArrayIndexOutOfBoundsException
@@ -2011,8 +1988,6 @@ public class Arrays {
      * All elements must be comparable to each other without a
      * {@code ClassCastException} being thrown.
      *
-     * @param array
-     *            the {@code Object} array to be sorted.
      * @param start
      *            the start index to sort.
      * @param end
@@ -2021,7 +1996,7 @@ public class Arrays {
      *            the {@code Comparator}.
      * @throws ClassCastException
      *                if elements in the array cannot be compared to each other
-     *                using the {@code Comparator}.
+     *                using the given {@code Comparator}.
      * @throws IllegalArgumentException
      *                if {@code start > end}.
      * @throws ArrayIndexOutOfBoundsException
@@ -2035,10 +2010,6 @@ public class Arrays {
      * Sorts the specified array using the specified {@code Comparator}. All elements
      * must be comparable to each other without a {@code ClassCastException} being thrown.
      *
-     * @param array
-     *            the {@code Object} array to be sorted.
-     * @param comparator
-     *            the {@code Comparator}.
      * @throws ClassCastException
      *                if elements in the array cannot be compared to each other
      *                using the {@code Comparator}.

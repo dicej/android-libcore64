@@ -95,7 +95,7 @@ public final class LocaleData {
     public char percent;
     public char perMill;
     public char monetarySeparator;
-    public char minusSign;
+    public String minusSign;
     public String exponentSeparator;
     public String infinity;
     public String NaN;
@@ -112,27 +112,40 @@ public final class LocaleData {
     private LocaleData() {
     }
 
+    public static Locale mapInvalidAndNullLocales(Locale locale) {
+        if (locale == null) {
+            return Locale.getDefault();
+        }
+
+        if ("und".equals(locale.toLanguageTag())) {
+            return Locale.ROOT;
+        }
+
+        return locale;
+    }
+
     /**
      * Returns a shared LocaleData for the given locale.
      */
     public static LocaleData get(Locale locale) {
         if (locale == null) {
-            locale = Locale.getDefault();
+            throw new NullPointerException("locale == null");
         }
-        String localeName = locale.toString();
+
+        final String languageTag = locale.toLanguageTag();
         synchronized (localeDataCache) {
-            LocaleData localeData = localeDataCache.get(localeName);
+            LocaleData localeData = localeDataCache.get(languageTag);
             if (localeData != null) {
                 return localeData;
             }
         }
         LocaleData newLocaleData = initLocaleData(locale);
         synchronized (localeDataCache) {
-            LocaleData localeData = localeDataCache.get(localeName);
+            LocaleData localeData = localeDataCache.get(languageTag);
             if (localeData != null) {
                 return localeData;
             }
-            localeDataCache.put(localeName, newLocaleData);
+            localeDataCache.put(languageTag, newLocaleData);
             return newLocaleData;
         }
     }
@@ -171,9 +184,15 @@ public final class LocaleData {
 
     private static LocaleData initLocaleData(Locale locale) {
         LocaleData localeData = new LocaleData();
-        if (!ICU.initLocaleDataImpl(locale.toString(), localeData)) {
+        if (!ICU.initLocaleDataNative(locale.toLanguageTag(), localeData)) {
             throw new AssertionError("couldn't initialize LocaleData for locale " + locale);
         }
+
+        // Get the "h:mm a" and "HH:mm" 12- and 24-hour time format strings.
+        localeData.timeFormat12 = ICU.getBestDateTimePattern("hm", locale);
+        localeData.timeFormat24 = ICU.getBestDateTimePattern("Hm", locale);
+
+        // Fix up a couple of patterns.
         if (localeData.fullTimeFormat != null) {
             // There are some full time format patterns in ICU that use the pattern character 'v'.
             // Java doesn't accept this, so we replace it with 'z' which has about the same result

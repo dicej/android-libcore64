@@ -88,7 +88,7 @@ public class CollatorTest extends junit.framework.TestCase {
     }
 
     public void testEqualsObject() throws ParseException {
-        String rule = "< a < b < c < d < e";
+        String rule = "&9 < a < b < c < d < e";
         RuleBasedCollator coll = new RuleBasedCollator(rule);
 
         assertEquals(Collator.TERTIARY, coll.getStrength());
@@ -109,7 +109,7 @@ public class CollatorTest extends junit.framework.TestCase {
         // Regression test for HARMONY-1352, that doesn't get run in the harmony test suite because
         // of an earlier failure.
         try {
-            new RuleBasedCollator("< a< b< c< d").getCollationElementIterator((CharacterIterator) null);
+            new RuleBasedCollator("&9 < a< b< c< d").getCollationElementIterator((CharacterIterator) null);
             fail("NullPointerException expected");
         } catch (NullPointerException expected) {
         }
@@ -134,15 +134,19 @@ public class CollatorTest extends junit.framework.TestCase {
         assertCollationElementIterator(coll.getCollationElementIterator(it), offsets);
     }
 
-    public void testGetCollationElementIteratorString() throws Exception {
-        assertGetCollationElementIteratorString(new Locale("es", "", "TRADITIONAL"), "cha", 0, 2, 3);
+    public void testGetCollationElementIteratorString_es() throws Exception {
         assertGetCollationElementIteratorString(new Locale("es", "", ""), "cha", 0, 1, 2, 3);
-        assertGetCollationElementIteratorString(new Locale("de", "DE", ""), "\u00e6b", 0, 1, 1, 1, 1, 2);
     }
 
-    public void testGetCollationElementIteratorCharacterIterator() throws Exception {
-        assertGetCollationElementIteratorCharacterIterator(new Locale("es", "", "TRADITIONAL"), "cha", 0, 2, 3);
+    public void testGetCollationElementIteratorString_de_DE() throws Exception {
+        assertGetCollationElementIteratorString(new Locale("de", "DE", ""), "\u00e6b", 0, 1, 1, 2);
+    }
+
+    public void testGetCollationElementIteratorCharacterIterator_es() throws Exception {
         assertGetCollationElementIteratorCharacterIterator(new Locale("es", "", ""), "cha", 0, 1, 2, 3);
-        assertGetCollationElementIteratorCharacterIterator(new Locale("de", "DE", ""), "\u00e6b", 0, 1, 1, 1, 1, 2);
+    }
+
+    public void testGetCollationElementIteratorCharacterIterator_de_DE() throws Exception {
+        assertGetCollationElementIteratorCharacterIterator(new Locale("de", "DE", ""), "\u00e6b", 0, 1, 1, 2);
     }
 }

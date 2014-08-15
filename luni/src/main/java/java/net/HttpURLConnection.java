@@ -235,9 +235,9 @@ import java.util.Arrays;
  * until a connection is established.
  *
  * <h3>Response Caching</h3>
- * Android 4.0 (Ice Cream Sandwich) includes a response cache. See {@code
- * android.net.http.HttpResponseCache} for instructions on enabling HTTP caching
- * in your application.
+ * Android 4.0 (Ice Cream Sandwich, API level 15) includes a response cache. See
+ * {@code android.net.http.HttpResponseCache} for instructions on enabling HTTP
+ * caching in your application.
  *
  * <h3>Avoiding Bugs In Earlier Releases</h3>
  * Prior to Android 2.2 (Froyo), this class had some frustrating bugs. In
@@ -312,11 +312,19 @@ public abstract class HttpURLConnection extends URLConnection {
     protected int chunkLength = -1;
 
     /**
-     * If using HTTP fixed-length streaming mode this parameter defines the
-     * fixed length of content. Default value is {@code -1} that means the
-     * fixed-length streaming mode is disabled.
+     * The byte count in the request body if it is both known and streamed; and
+     * -1 otherwise. If the byte count exceeds {@link Integer#MAX_VALUE} (2 GiB)
+     * then the value of this field will be {@link Integer#MAX_VALUE}. In that
+     * case use {@link #fixedContentLengthLong} to access the exact byte count.
      */
     protected int fixedContentLength = -1;
+
+    /**
+     * The byte count in the request body if it is both known and streamed; and
+     * -1 otherwise. Prefer this field over the {@code int}-valued {@code
+     * fixedContentLength} on platforms that support both.
+     */
+    protected long fixedContentLengthLong = -1;
 
     // 2XX: generally "OK"
     // 3XX: relocation/redirect
@@ -737,9 +745,8 @@ public abstract class HttpURLConnection extends URLConnection {
     }
 
     /**
-     * If the length of a HTTP request body is known ahead, sets fixed length to
-     * enable streaming without buffering. Sets after connection will cause an
-     * exception.
+     * Configures this connection to stream the request body with the known
+     * fixed byte count of {@code contentLength}.
      *
      * @see #setChunkedStreamingMode
      * @param contentLength
@@ -748,8 +755,9 @@ public abstract class HttpURLConnection extends URLConnection {
      *             if already connected or another mode already set.
      * @throws IllegalArgumentException
      *             if {@code contentLength} is less than zero.
+     * @since 1.7
      */
-    public void setFixedLengthStreamingMode(int contentLength) {
+    public void setFixedLengthStreamingMode(long contentLength) {
         if (super.connected) {
             throw new IllegalStateException("Already connected");
         }
@@ -759,7 +767,16 @@ public abstract class HttpURLConnection extends URLConnection {
         if (contentLength < 0) {
             throw new IllegalArgumentException("contentLength < 0");
         }
-        this.fixedContentLength = contentLength;
+        this.fixedContentLength = (int) Math.min(contentLength, Integer.MAX_VALUE);
+        this.fixedContentLengthLong = contentLength;
+    }
+
+    /**
+     * Equivalent to {@code setFixedLengthStreamingMode((long) contentLength)},
+     * but available on earlier versions of Android and limited to 2 GiB.
+     */
+    public void setFixedLengthStreamingMode(int contentLength) {
+      setFixedLengthStreamingMode((long) contentLength);
     }
 
     /**
@@ -767,11 +784,15 @@ public abstract class HttpURLConnection extends URLConnection {
      * only servers may not support this mode.
      *
      * <p>When HTTP chunked encoding is used, the stream is divided into
-     * chunks, each prefixed with a header containing the chunk's size. Setting
-     * a large chunk length requires a large internal buffer, potentially
-     * wasting memory. Setting a small chunk length increases the number of
+     * chunks, each prefixed with a header containing the chunk's size.
+     * A large chunk length requires a large internal buffer, potentially
+     * wasting memory. A small chunk length increases the number of
      * bytes that must be transmitted because of the header on every chunk.
-     * Most caller should use {@code 0} to get the system default.
+     *
+     * <p>Implementation details: In some releases the {@code chunkLength} is
+     * treated as a hint: chunks sent to the server may actually be larger or
+     * smaller. To force a chunk to be sent to the server call
+     * {@link java.io.OutputStream#flush()}.
      *
      * @see #setFixedLengthStreamingMode
      * @param chunkLength the length to use, or {@code 0} for the default chunk

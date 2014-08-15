@@ -16,21 +16,21 @@
 
 #define LOG_TAG "Posix"
 
-
-#include "AsynchronousSocketCloseMonitor.h"
+#include "AsynchronousCloseMonitor.h"
+#include "cutils/log.h"
 #include "ExecStrings.h"
 #include "JNIHelp.h"
 #include "JniConstants.h"
 #include "JniException.h"
 #include "NetworkUtilities.h"
 #include "Portability.h"
+#include "readlink.h"
 #include "ScopedBytes.h"
 #include "ScopedLocalRef.h"
 #include "ScopedPrimitiveArray.h"
 #include "ScopedUtfChars.h"
-#include "StaticAssert.h"
-#include "UniquePtr.h"
 #include "toStringArray.h"
+#include "UniquePtr.h"
 
 #if !defined(__MINGW32__) && !defined(__MINGW64__)
 
@@ -42,7 +42,17 @@
 #include <pwd.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+#ifndef __APPLE__
+#include <sys/prctl.h>
+#endif
 #include <sys/socket.h>
+#include <sys/stat.h>
+#ifdef __APPLE__
+#include <sys/statvfs.h>
+#endif
+#include <sys/syscall.h>
+#include <sys/time.h>
+#include <sys/types.h>
 #include <sys/uio.h>
 #include <sys/utsname.h>
 #include <sys/wait.h>
@@ -65,6 +75,11 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+
+#ifndef __unused
+#define __unused __attribute__((__unused__))
+#endif
+
 #define TO_JAVA_STRING(NAME, EXP) \
         jstring NAME = env->NewStringUTF(EXP); \
         if (NAME == NULL) return NULL;
@@ -78,32 +93,80 @@ struct addrinfo_deleter {
 };
 
 /**
- * Used to retry networking system calls that can return EINTR. Unlike TEMP_FAILURE_RETRY,
- * this also handles the case where the reason for failure is that another thread called
- * Socket.close. This macro also throws exceptions on failure.
+ * Used to retry networking system calls that can be interrupted with a signal. Unlike
+ * TEMP_FAILURE_RETRY, this also handles the case where
+ * AsynchronousCloseMonitor::signalBlockedThreads(fd) is used to signal a close() or
+ * Thread.interrupt(). Other signals that result in an EINTR result are ignored and the system call
+ * is retried.
  *
- * Returns the result of 'exp', though a Java exception will be pending if the result is -1.
+ * Returns the result of the system call though a Java exception will be pending if the result is
+ * -1:  a SocketException if signaled via AsynchronousCloseMonitor, or ErrnoException for other
+ * failures.
  */
 #if !defined(__MINGW32__) && !defined(__MINGW64__)
 #define NET_FAILURE_RETRY(jni_env, return_type, syscall_name, java_fd, ...) ({ \
     return_type _rc = -1; \
     do { \
+        bool _wasSignaled; \
+        int _syscallErrno; \
         { \
             int _fd = jniGetFDFromFileDescriptor(jni_env, java_fd); \
-            AsynchronousSocketCloseMonitor _monitor(_fd); \
+            AsynchronousCloseMonitor _monitor(_fd); \
             _rc = syscall_name(_fd, __VA_ARGS__); \
+            _syscallErrno = errno; \
+            _wasSignaled = _monitor.wasSignaled(); \
         } \
-        if (_rc == -1) { \
-            if (jniGetFDFromFileDescriptor(jni_env, java_fd) == -1) { \
-                jniThrowException(jni_env, "java/net/SocketException", "Socket closed"); \
+        if (_wasSignaled) { \
+            jniThrowException(jni_env, "java/net/SocketException", "Socket closed"); \
+            _rc = -1; \
+            break; \
+        } \
+        if (_rc == -1 && _syscallErrno != EINTR) { \
+            /* TODO: with a format string we could show the arguments too, like strace(1). */ \
+            throwErrnoException(jni_env, # syscall_name); \
+            break; \
+        } \
+    } while (_rc == -1); /* _syscallErrno == EINTR && !_wasSignaled */ \
+    _rc; })
+
+/**
+ * Used to retry system calls that can be interrupted with a signal. Unlike TEMP_FAILURE_RETRY, this
+ * also handles the case where AsynchronousCloseMonitor::signalBlockedThreads(fd) is used to signal
+ * a close() or Thread.interrupt(). Other signals that result in an EINTR result are ignored and the
+ * system call is retried.
+ *
+ * Returns the result of the system call though a Java exception will be pending if the result is
+ * -1: an IOException if the file descriptor is already closed, a InterruptedIOException if signaled
+ * via AsynchronousCloseMonitor, or ErrnoException for other failures.
+ */
+#define IO_FAILURE_RETRY(jni_env, return_type, syscall_name, java_fd, ...) ({ \
+    return_type _rc = -1; \
+    int _fd = jniGetFDFromFileDescriptor(jni_env, java_fd); \
+    if (_fd == -1) { \
+        jniThrowException(jni_env, "java/io/IOException", "File descriptor closed"); \
+    } else { \
+        do { \
+            bool _wasSignaled; \
+            int _syscallErrno; \
+            { \
+                int _fd = jniGetFDFromFileDescriptor(jni_env, java_fd); \
+                AsynchronousCloseMonitor _monitor(_fd); \
+                _rc = syscall_name(_fd, __VA_ARGS__); \
+                _syscallErrno = errno; \
+                _wasSignaled = _monitor.wasSignaled(); \
+            } \
+            if (_wasSignaled) { \
+                jniThrowException(jni_env, "java/io/InterruptedIOException", # syscall_name " interrupted"); \
+                _rc = -1; \
                 break; \
-            } else if (errno != EINTR) { \
+            } \
+            if (_rc == -1 && _syscallErrno != EINTR) { \
                 /* TODO: with a format string we could show the arguments too, like strace(1). */ \
                 throwErrnoException(jni_env, # syscall_name); \
                 break; \
             } \
-        } \
-    } while (_rc == -1); \
+        } while (_rc == -1); /* && _syscallErrno == EINTR && !_wasSignaled */ \
+    } \
     _rc; })
 #else
 #define NET_FAILURE_RETRY(jni_env, return_type, syscall_name, java_fd, ...) ({ \
@@ -348,26 +411,28 @@ static jobject makeStructStat(JNIEnv* env, const struct _stat& sb) {
             static_cast<jlong>(sb.st_ctime), blksize, blocks);
 }
 
-static jobject makeStructStatFs(JNIEnv* env, const struct statfs& sb) {
+static jobject makeStructStatVfs(JNIEnv* env, const struct statvfs& sb) {
 #if defined(__APPLE__)
     // Mac OS has no f_namelen field in struct statfs.
     jlong max_name_length = 255; // __DARWIN_MAXNAMLEN
 #else
-    // Until Mac OS 10.7, these were 32-bit fields.
-    STATIC_ASSERT(sizeof(sb.f_bavail) == sizeof(jlong), statfs_not_64_bit);
-    STATIC_ASSERT(sizeof(sb.f_bfree) == sizeof(jlong), statfs_not_64_bit);
-    STATIC_ASSERT(sizeof(sb.f_blocks) == sizeof(jlong), statfs_not_64_bit);
-
-    jlong max_name_length = static_cast<jlong>(sb.f_namelen);
+    jlong max_name_length = static_cast<jlong>(sb.f_namemax);
 #endif
 
-    static jmethodID ctor = env->GetMethodID(JniConstants::structStatFsClass, "<init>",
-            "(JJJJJJJJ)V");
-    return env->NewObject(JniConstants::structStatFsClass, ctor, static_cast<jlong>(sb.f_bsize),
-            static_cast<jlong>(sb.f_blocks), static_cast<jlong>(sb.f_bfree),
-            static_cast<jlong>(sb.f_bavail), static_cast<jlong>(sb.f_files),
-            static_cast<jlong>(sb.f_ffree), max_name_length,
-            static_cast<jlong>(sb.f_frsize));
+    static jmethodID ctor = env->GetMethodID(JniConstants::structStatVfsClass, "<init>",
+            "(JJJJJJJJJJJ)V");
+    return env->NewObject(JniConstants::structStatVfsClass, ctor,
+                          static_cast<jlong>(sb.f_bsize),
+                          static_cast<jlong>(sb.f_frsize),
+                          static_cast<jlong>(sb.f_blocks),
+                          static_cast<jlong>(sb.f_bfree),
+                          static_cast<jlong>(sb.f_bavail),
+                          static_cast<jlong>(sb.f_files),
+                          static_cast<jlong>(sb.f_ffree),
+                          static_cast<jlong>(sb.f_favail),
+                          static_cast<jlong>(sb.f_fsid),
+                          static_cast<jlong>(sb.f_flag),
+                          max_name_length);
 }
 
 static jobject makeStructLinger(JNIEnv* env, const struct linger& l) {
@@ -381,7 +446,11 @@ static jobject makeStructTimeval(JNIEnv* env, const struct timeval& tv) {
             static_cast<jlong>(tv.tv_sec), static_cast<jlong>(tv.tv_usec));
 }
 
-static jobject makeStructUcred(JNIEnv* env, const struct ucred& u) {
+static jobject makeStructUcred(JNIEnv* env, const struct ucred& u __unused) {
+#ifdef __APPLE__
+  jniThrowException(env, "java/lang/UnsupportedOperationException", "unimplemented support for ucred on a Mac");
+  return NULL;
+#else
   static jmethodID ctor = env->GetMethodID(JniConstants::structUcredClass, "<init>", "(III)V");
 #ifdef __APPLE__
   jniThrowException(env, "java/lang/UnsupportedOperationException",
@@ -692,8 +761,7 @@ static jint Posix_fcntlFlock(JNIEnv* env, jobject, jobject javaFd, jint cmd, job
     lock.l_len = env->GetLongField(javaFlock, lenFid);
     lock.l_pid = env->GetIntField(javaFlock, pidFid);
 
-    int fd = jniGetFDFromFileDescriptor(env, javaFd);
-    int rc = throwIfMinusOne(env, "fcntl", TEMP_FAILURE_RETRY(fcntl(fd, cmd, &lock)));
+    int rc = IO_FAILURE_RETRY(env, int, fcntl, javaFd, cmd, &lock);
     if (rc != -1) {
         env->SetShortField(javaFlock, typeFid, lock.l_type);
         env->SetShortField(javaFlock, whenceFid, lock.l_whence);
@@ -720,15 +788,15 @@ static jobject Posix_fstat(JNIEnv* env, jobject, jobject javaFd) {
     return makeStructStat(env, sb);
 }
 
-static jobject Posix_fstatfs(JNIEnv* env, jobject, jobject javaFd) {
+static jobject Posix_fstatvfs(JNIEnv* env, jobject, jobject javaFd) {
     int fd = jniGetFDFromFileDescriptor(env, javaFd);
-    struct statfs sb;
-    int rc = TEMP_FAILURE_RETRY(fstatfs(fd, &sb));
+    struct statvfs sb;
+    int rc = TEMP_FAILURE_RETRY(fstatvfs(fd, &sb));
     if (rc == -1) {
-        throwErrnoException(env, "fstatfs");
+        throwErrnoException(env, "fstatvfs");
         return NULL;
     }
-    return makeStructStatFs(env, sb);
+    return makeStructStatVfs(env, sb);
 }
 
 static void Posix_fsync(JNIEnv* env, jobject, jobject javaFd) {
@@ -978,6 +1046,21 @@ static jobject Posix_getsockoptUcred(JNIEnv* env, jobject, jobject javaFd, jint 
   return makeStructUcred(env, u);
 }
 
+static jint Posix_gettid(JNIEnv* env __unused, jobject) {
+#if defined(__APPLE__)
+  uint64_t owner;
+  int rc = pthread_threadid_np(NULL, &owner);  // Requires Mac OS 10.6
+  if (rc != 0) {
+    throwErrnoException(env, "gettid");
+    return 0;
+  }
+  return static_cast<jint>(owner);
+#else
+  // Neither bionic nor glibc exposes gettid(2).
+  return syscall(__NR_gettid);
+#endif
+}
+
 static jint Posix_getuid(JNIEnv*, jobject) {
     return getuid();
 }
@@ -1049,6 +1132,18 @@ static void Posix_lchown(JNIEnv* env, jobject, jstring javaPath, jint uid, jint 
     throwIfMinusOne(env, "lchown", TEMP_FAILURE_RETRY(u_lchown(path.c_str(), uid, gid)));
 }
 
+static void Posix_link(JNIEnv* env, jobject, jstring javaOldPath, jstring javaNewPath) {
+    ScopedUtfChars oldPath(env, javaOldPath);
+    if (oldPath.c_str() == NULL) {
+        return;
+    }
+    ScopedUtfChars newPath(env, javaNewPath);
+    if (newPath.c_str() == NULL) {
+        return;
+    }
+    throwIfMinusOne(env, "link", TEMP_FAILURE_RETRY(link(oldPath.c_str(), newPath.c_str())));
+}
+
 static void Posix_listen(JNIEnv* env, jobject, jobject javaFd, jint backlog) {
     int fd = jniGetFDFromFileDescriptor(env, javaFd);
     throwIfMinusOne(env, "listen", TEMP_FAILURE_RETRY(listen(fd, backlog)));
@@ -1079,6 +1174,14 @@ static void Posix_mkdir(JNIEnv* env, jobject, jstring javaPath, jint mode) {
         return;
     }
     throwIfMinusOne(env, "mkdir", TEMP_FAILURE_RETRY(u_mkdir(path.c_str(), mode)));
+}
+
+static void Posix_mkfifo(JNIEnv* env, jobject, jstring javaPath, jint mode) {
+    ScopedUtfChars path(env, javaPath);
+    if (path.c_str() == NULL) {
+        return;
+    }
+    throwIfMinusOne(env, "mkfifo", TEMP_FAILURE_RETRY(mkfifo(path.c_str(), mode)));
 }
 
 static void Posix_mlock(JNIEnv* env, jobject, jlong address, jlong byteCount) {
@@ -1148,7 +1251,7 @@ static jint Posix_poll(JNIEnv* env, jobject, jobjectArray javaStructs, jint time
     static jfieldID eventsFid = env->GetFieldID(JniConstants::structPollfdClass, "events", "S");
     static jfieldID reventsFid = env->GetFieldID(JniConstants::structPollfdClass, "revents", "S");
 
-    // Turn the Java libcore.io.StructPollfd[] into a C++ struct pollfd[].
+    // Turn the Java android.system.StructPollfd[] into a C++ struct pollfd[].
     size_t arrayLength = env->GetArrayLength(javaStructs);
     UniquePtr<struct pollfd[]> fds(new struct pollfd[arrayLength]);
     memset(fds.get(), 0, sizeof(struct pollfd) * arrayLength);
@@ -1167,11 +1270,9 @@ static jint Posix_poll(JNIEnv* env, jobject, jobjectArray javaStructs, jint time
         ++count;
     }
 
-    // Since we don't know which fds -- if any -- are sockets, be conservative and register
-    // all fds for asynchronous socket close monitoring.
-    std::vector<AsynchronousSocketCloseMonitor*> monitors;
+    std::vector<AsynchronousCloseMonitor*> monitors;
     for (size_t i = 0; i < count; ++i) {
-        monitors.push_back(new AsynchronousSocketCloseMonitor(fds[i].fd));
+        monitors.push_back(new AsynchronousCloseMonitor(fds[i].fd));
     }
     int rc = poll(fds.get(), count, timeoutMs);
     for (size_t i = 0; i < monitors.size(); ++i) {
@@ -1182,7 +1283,7 @@ static jint Posix_poll(JNIEnv* env, jobject, jobjectArray javaStructs, jint time
         return -1;
     }
 
-    // Update the revents fields in the Java libcore.io.StructPollfd[].
+    // Update the revents fields in the Java android.system.StructPollfd[].
     for (size_t i = 0; i < count; ++i) {
         ScopedLocalRef<jobject> javaStruct(env, env->GetObjectArrayElement(javaStructs, i));
         if (javaStruct.get() == NULL) {
@@ -1193,13 +1294,39 @@ static jint Posix_poll(JNIEnv* env, jobject, jobjectArray javaStructs, jint time
     return rc;
 }
 
+static void Posix_posix_fallocate(JNIEnv* env, jobject, jobject javaFd __unused,
+                                  jlong offset __unused, jlong length __unused) {
+#ifdef __APPLE__
+    jniThrowException(env, "java/lang/UnsupportedOperationException",
+                      "fallocate doesn't exist on a Mac");
+#else
+    int fd = jniGetFDFromFileDescriptor(env, javaFd);
+    errno = TEMP_FAILURE_RETRY(posix_fallocate64(fd, offset, length));
+    if (errno != 0) {
+        throwErrnoException(env, "posix_fallocate");
+    }
+#endif
+}
+
+static jint Posix_prctl(JNIEnv* env, jobject, jint option __unused, jlong arg2 __unused,
+                        jlong arg3 __unused, jlong arg4 __unused, jlong arg5 __unused) {
+#ifdef __APPLE__
+    jniThrowException(env, "java/lang/UnsupportedOperationException", "prctl doesn't exist on a Mac");
+    return 0;
+#else
+    int result = prctl(static_cast<int>(option),
+                       static_cast<unsigned long>(arg2), static_cast<unsigned long>(arg3),
+                       static_cast<unsigned long>(arg4), static_cast<unsigned long>(arg5));
+    return throwIfMinusOne(env, "prctl", result);
+#endif
+}
+
 static jint Posix_preadBytes(JNIEnv* env, jobject, jobject javaFd, jobject javaBytes, jint byteOffset, jint byteCount, jlong offset) {
     ScopedBytesRW bytes(env, javaBytes);
     if (bytes.get() == NULL) {
         return -1;
     }
-    int fd = jniGetFDFromFileDescriptor(env, javaFd);
-    return throwIfMinusOne(env, "pread", TEMP_FAILURE_RETRY(pread64(fd, bytes.get() + byteOffset, byteCount, offset)));
+    return IO_FAILURE_RETRY(env, ssize_t, pread64, javaFd, bytes.get() + byteOffset, byteCount, offset);
 }
 
 static jint Posix_pwriteBytes(JNIEnv* env, jobject, jobject javaFd, jbyteArray javaBytes, jint byteOffset, jint byteCount, jlong offset) {
@@ -1207,8 +1334,7 @@ static jint Posix_pwriteBytes(JNIEnv* env, jobject, jobject javaFd, jbyteArray j
     if (bytes.get() == NULL) {
         return -1;
     }
-    int fd = jniGetFDFromFileDescriptor(env, javaFd);
-    return throwIfMinusOne(env, "pwrite", TEMP_FAILURE_RETRY(pwrite64(fd, bytes.get() + byteOffset, byteCount, offset)));
+    return IO_FAILURE_RETRY(env, ssize_t, pwrite64, javaFd, bytes.get() + byteOffset, byteCount, offset);
 }
 
 static jint Posix_readBytes(JNIEnv* env, jobject, jobject javaFd, jobject javaBytes, jint byteOffset, jint byteCount) {
@@ -1216,8 +1342,21 @@ static jint Posix_readBytes(JNIEnv* env, jobject, jobject javaFd, jobject javaBy
     if (bytes.get() == NULL) {
         return -1;
     }
-    int fd = jniGetFDFromFileDescriptor(env, javaFd);
-    return throwIfMinusOne(env, "read", TEMP_FAILURE_RETRY(read(fd, bytes.get() + byteOffset, byteCount)));
+    return IO_FAILURE_RETRY(env, ssize_t, read, javaFd, bytes.get() + byteOffset, byteCount);
+}
+
+static jstring Posix_readlink(JNIEnv* env, jobject, jstring javaPath) {
+    ScopedUtfChars path(env, javaPath);
+    if (path.c_str() == NULL) {
+        return NULL;
+    }
+
+    std::string result;
+    if (!readlink(path.c_str(), result)) {
+        throwErrnoException(env, "readlink");
+        return NULL;
+    }
+    return env->NewStringUTF(result.c_str());
 }
 
 static jint Posix_readv(JNIEnv* env, jobject, jobject javaFd, jobjectArray buffers, jintArray offsets, jintArray byteCounts) {
@@ -1225,8 +1364,7 @@ static jint Posix_readv(JNIEnv* env, jobject, jobject javaFd, jobjectArray buffe
     if (!ioVec.init(buffers, offsets, byteCounts)) {
         return -1;
     }
-    int fd = jniGetFDFromFileDescriptor(env, javaFd);
-    return throwIfMinusOne(env, "readv", TEMP_FAILURE_RETRY(readv(fd, ioVec.get(), ioVec.size())));
+    return IO_FAILURE_RETRY(env, ssize_t, readv, javaFd, ioVec.get(), ioVec.size());
 }
 
 static jint Posix_recvfromBytes(JNIEnv* env, jobject, jobject javaFd, jobject javaBytes, jint byteOffset, jint byteCount, jint flags, jobject javaInetSocketAddress) {
@@ -1369,6 +1507,7 @@ static void Posix_setsockoptInt(JNIEnv* env, jobject, jobject javaFd, jint level
 // Mac OS didn't support modern multicast APIs until 10.7.
 static void Posix_setsockoptIpMreqn(JNIEnv*, jobject, jobject, jint, jint, jint) { abort(); }
 static void Posix_setsockoptGroupReq(JNIEnv*, jobject, jobject, jint, jint, jobject) { abort(); }
+static void Posix_setsockoptGroupSourceReq(JNIEnv*, jobject, jobject, jint, jint, jobject) { abort(); }
 #else
 static void Posix_setsockoptIpMreqn(JNIEnv* env, jobject, jobject javaFd, jint level, jint option, jint value) {
 #if !defined(__MINGW32__) && !defined(__MINGW64__)
@@ -1405,6 +1544,7 @@ static void Posix_setsockoptGroupReq(JNIEnv* env, jobject, jobject javaFd, jint 
     if (rc == -1 && errno == EINVAL) {
         // Maybe we're a 32-bit binary talking to a 64-bit kernel?
         // glibc doesn't automatically handle this.
+        // http://sourceware.org/bugzilla/show_bug.cgi?id=12080
         struct group_req64 {
             uint32_t gr_interface;
             uint32_t my_padding;
@@ -1418,6 +1558,48 @@ static void Posix_setsockoptGroupReq(JNIEnv* env, jobject, jobject javaFd, jint 
 #else
         rc = TEMP_FAILURE_RETRY(setsockopt(fd, level, option, reinterpret_cast<const char*>(&req64), sizeof(req64)));
 #endif
+    }
+    throwIfMinusOne(env, "setsockopt", rc);
+}
+
+static void Posix_setsockoptGroupSourceReq(JNIEnv* env, jobject, jobject javaFd, jint level, jint option, jobject javaGroupSourceReq) {
+    socklen_t sa_len;
+    struct group_source_req req;
+    memset(&req, 0, sizeof(req));
+
+    static jfieldID gsrInterfaceFid = env->GetFieldID(JniConstants::structGroupSourceReqClass, "gsr_interface", "I");
+    req.gsr_interface = env->GetIntField(javaGroupSourceReq, gsrInterfaceFid);
+    // Get the IPv4 or IPv6 multicast address to join or leave.
+    static jfieldID gsrGroupFid = env->GetFieldID(JniConstants::structGroupSourceReqClass, "gsr_group", "Ljava/net/InetAddress;");
+    ScopedLocalRef<jobject> javaGroup(env, env->GetObjectField(javaGroupSourceReq, gsrGroupFid));
+    if (!inetAddressToSockaddrVerbatim(env, javaGroup.get(), 0, req.gsr_group, sa_len)) {
+        return;
+    }
+
+    // Get the IPv4 or IPv6 multicast address to add to the filter.
+    static jfieldID gsrSourceFid = env->GetFieldID(JniConstants::structGroupSourceReqClass, "gsr_source", "Ljava/net/InetAddress;");
+    ScopedLocalRef<jobject> javaSource(env, env->GetObjectField(javaGroupSourceReq, gsrSourceFid));
+    if (!inetAddressToSockaddrVerbatim(env, javaSource.get(), 0, req.gsr_source, sa_len)) {
+        return;
+    }
+
+    int fd = jniGetFDFromFileDescriptor(env, javaFd);
+    int rc = TEMP_FAILURE_RETRY(setsockopt(fd, level, option, &req, sizeof(req)));
+    if (rc == -1 && errno == EINVAL) {
+        // Maybe we're a 32-bit binary talking to a 64-bit kernel?
+        // glibc doesn't automatically handle this.
+        // http://sourceware.org/bugzilla/show_bug.cgi?id=12080
+        struct group_source_req64 {
+            uint32_t gsr_interface;
+            uint32_t my_padding;
+            sockaddr_storage gsr_group;
+            sockaddr_storage gsr_source;
+        };
+        group_source_req64 req64;
+        req64.gsr_interface = req.gsr_interface;
+        memcpy(&req64.gsr_group, &req.gsr_group, sizeof(req.gsr_group));
+        memcpy(&req64.gsr_source, &req.gsr_source, sizeof(req.gsr_source));
+        rc = TEMP_FAILURE_RETRY(setsockopt(fd, level, option, &req64, sizeof(req64)));
     }
     throwIfMinusOne(env, "setsockopt", rc);
 }
@@ -1489,18 +1671,18 @@ static jobject Posix_stat(JNIEnv* env, jobject, jstring javaPath) {
     return doStat(env, javaPath, false);
 }
 
-static jobject Posix_statfs(JNIEnv* env, jobject, jstring javaPath) {
-    ScopedPathChars path(env, javaPath);
+static jobject Posix_statvfs(JNIEnv* env, jobject, jstring javaPath) {
+    ScopedUtfChars path(env, javaPath);
     if (path.c_str() == NULL) {
         return NULL;
     }
-    struct statfs sb;
-    int rc = TEMP_FAILURE_RETRY(u_statfs(path.c_str(), &sb));
+    struct statvfs sb;
+    int rc = TEMP_FAILURE_RETRY(statvfs(path.c_str(), &sb));
     if (rc == -1) {
-        throwErrnoException(env, "statfs");
+        throwErrnoException(env, "statvfs");
         return NULL;
     }
-    return makeStructStatFs(env, sb);
+    return makeStructStatVfs(env, sb);
 }
 
 static jstring Posix_strerror(JNIEnv* env, jobject, jint errnum) {
@@ -1580,8 +1762,7 @@ static jint Posix_writeBytes(JNIEnv* env, jobject, jobject javaFd, jbyteArray ja
     if (bytes.get() == NULL) {
         return -1;
     }
-    int fd = jniGetFDFromFileDescriptor(env, javaFd);
-    return throwIfMinusOne(env, "write", TEMP_FAILURE_RETRY(write(fd, bytes.get() + byteOffset, byteCount)));
+    return IO_FAILURE_RETRY(env, ssize_t, write, javaFd, bytes.get() + byteOffset, byteCount);
 }
 
 static jint Posix_writev(JNIEnv* env, jobject, jobject javaFd, jobjectArray buffers, jintArray offsets, jintArray byteCounts) {
@@ -1589,8 +1770,7 @@ static jint Posix_writev(JNIEnv* env, jobject, jobject javaFd, jobjectArray buff
     if (!ioVec.init(buffers, offsets, byteCounts)) {
         return -1;
     }
-    int fd = jniGetFDFromFileDescriptor(env, javaFd);
-    return throwIfMinusOne(env, "writev", TEMP_FAILURE_RETRY(writev(fd, ioVec.get(), ioVec.size())));
+    return IO_FAILURE_RETRY(env, ssize_t, writev, javaFd, ioVec.get(), ioVec.size());
 }
 
 static JNINativeMethod gMethods[] = {
@@ -1611,14 +1791,14 @@ static JNINativeMethod gMethods[] = {
     NATIVE_METHOD(Posix, fchown, "(Ljava/io/FileDescriptor;II)V"),
     NATIVE_METHOD(Posix, fcntlVoid, "(Ljava/io/FileDescriptor;I)I"),
     NATIVE_METHOD(Posix, fcntlLong, "(Ljava/io/FileDescriptor;IJ)I"),
-    NATIVE_METHOD(Posix, fcntlFlock, "(Ljava/io/FileDescriptor;ILlibcore/io/StructFlock;)I"),
+    NATIVE_METHOD(Posix, fcntlFlock, "(Ljava/io/FileDescriptor;ILandroid/system/StructFlock;)I"),
     NATIVE_METHOD(Posix, fdatasync, "(Ljava/io/FileDescriptor;)V"),
-    NATIVE_METHOD(Posix, fstat, "(Ljava/io/FileDescriptor;)Llibcore/io/StructStat;"),
-    NATIVE_METHOD(Posix, fstatfs, "(Ljava/io/FileDescriptor;)Llibcore/io/StructStatFs;"),
+    NATIVE_METHOD(Posix, fstat, "(Ljava/io/FileDescriptor;)Landroid/system/StructStat;"),
+    NATIVE_METHOD(Posix, fstatvfs, "(Ljava/io/FileDescriptor;)Landroid/system/StructStatVfs;"),
     NATIVE_METHOD(Posix, fsync, "(Ljava/io/FileDescriptor;)V"),
     NATIVE_METHOD(Posix, ftruncate, "(Ljava/io/FileDescriptor;J)V"),
     NATIVE_METHOD(Posix, gai_strerror, "(I)Ljava/lang/String;"),
-    NATIVE_METHOD(Posix, getaddrinfo, "(Ljava/lang/String;Llibcore/io/StructAddrinfo;)[Ljava/net/InetAddress;"),
+    NATIVE_METHOD(Posix, getaddrinfo, "(Ljava/lang/String;Landroid/system/StructAddrinfo;)[Ljava/net/InetAddress;"),
     NATIVE_METHOD(Posix, getegid, "()I"),
     NATIVE_METHOD(Posix, geteuid, "()I"),
     NATIVE_METHOD(Posix, getgid, "()I"),
@@ -1627,28 +1807,31 @@ static JNINativeMethod gMethods[] = {
     NATIVE_METHOD(Posix, getpeername, "(Ljava/io/FileDescriptor;)Ljava/net/SocketAddress;"),
     NATIVE_METHOD(Posix, getpid, "()I"),
     NATIVE_METHOD(Posix, getppid, "()I"),
-    NATIVE_METHOD(Posix, getpwnam, "(Ljava/lang/String;)Llibcore/io/StructPasswd;"),
-    NATIVE_METHOD(Posix, getpwuid, "(I)Llibcore/io/StructPasswd;"),
+    NATIVE_METHOD(Posix, getpwnam, "(Ljava/lang/String;)Landroid/system/StructPasswd;"),
+    NATIVE_METHOD(Posix, getpwuid, "(I)Landroid/system/StructPasswd;"),
     NATIVE_METHOD(Posix, getsockname, "(Ljava/io/FileDescriptor;)Ljava/net/SocketAddress;"),
     NATIVE_METHOD(Posix, getsockoptByte, "(Ljava/io/FileDescriptor;II)I"),
     NATIVE_METHOD(Posix, getsockoptInAddr, "(Ljava/io/FileDescriptor;II)Ljava/net/InetAddress;"),
     NATIVE_METHOD(Posix, getsockoptInt, "(Ljava/io/FileDescriptor;II)I"),
-    NATIVE_METHOD(Posix, getsockoptLinger, "(Ljava/io/FileDescriptor;II)Llibcore/io/StructLinger;"),
-    NATIVE_METHOD(Posix, getsockoptTimeval, "(Ljava/io/FileDescriptor;II)Llibcore/io/StructTimeval;"),
-    NATIVE_METHOD(Posix, getsockoptUcred, "(Ljava/io/FileDescriptor;II)Llibcore/io/StructUcred;"),
+    NATIVE_METHOD(Posix, getsockoptLinger, "(Ljava/io/FileDescriptor;II)Landroid/system/StructLinger;"),
+    NATIVE_METHOD(Posix, getsockoptTimeval, "(Ljava/io/FileDescriptor;II)Landroid/system/StructTimeval;"),
+    NATIVE_METHOD(Posix, getsockoptUcred, "(Ljava/io/FileDescriptor;II)Landroid/system/StructUcred;"),
+    NATIVE_METHOD(Posix, gettid, "()I"),
     NATIVE_METHOD(Posix, getuid, "()I"),
     NATIVE_METHOD(Posix, if_indextoname, "(I)Ljava/lang/String;"),
     NATIVE_METHOD(Posix, inet_pton, "(ILjava/lang/String;)Ljava/net/InetAddress;"),
     NATIVE_METHOD(Posix, ioctlInetAddress, "(Ljava/io/FileDescriptor;ILjava/lang/String;)Ljava/net/InetAddress;"),
-    NATIVE_METHOD(Posix, ioctlInt, "(Ljava/io/FileDescriptor;ILlibcore/util/MutableInt;)I"),
+    NATIVE_METHOD(Posix, ioctlInt, "(Ljava/io/FileDescriptor;ILandroid/util/MutableInt;)I"),
     NATIVE_METHOD(Posix, isatty, "(Ljava/io/FileDescriptor;)Z"),
     NATIVE_METHOD(Posix, kill, "(II)V"),
     NATIVE_METHOD(Posix, lchown, "(Ljava/lang/String;II)V"),
+    NATIVE_METHOD(Posix, link, "(Ljava/lang/String;Ljava/lang/String;)V"),
     NATIVE_METHOD(Posix, listen, "(Ljava/io/FileDescriptor;I)V"),
     NATIVE_METHOD(Posix, lseek, "(Ljava/io/FileDescriptor;JI)J"),
-    NATIVE_METHOD(Posix, lstat, "(Ljava/lang/String;)Llibcore/io/StructStat;"),
+    NATIVE_METHOD(Posix, lstat, "(Ljava/lang/String;)Landroid/system/StructStat;"),
     NATIVE_METHOD(Posix, mincore, "(JJ[B)V"),
     NATIVE_METHOD(Posix, mkdir, "(Ljava/lang/String;I)V"),
+    NATIVE_METHOD(Posix, mkfifo, "(Ljava/lang/String;I)V"),
     NATIVE_METHOD(Posix, mlock, "(JJ)V"),
     NATIVE_METHOD(Posix, mmap, "(JJIILjava/io/FileDescriptor;J)J"),
     NATIVE_METHOD(Posix, msync, "(JJI)V"),
@@ -1656,15 +1839,18 @@ static JNINativeMethod gMethods[] = {
     NATIVE_METHOD(Posix, munmap, "(JJ)V"),
     NATIVE_METHOD(Posix, open, "(Ljava/lang/String;II)Ljava/io/FileDescriptor;"),
     NATIVE_METHOD(Posix, pipe, "()[Ljava/io/FileDescriptor;"),
-    NATIVE_METHOD(Posix, poll, "([Llibcore/io/StructPollfd;I)I"),
+    NATIVE_METHOD(Posix, poll, "([Landroid/system/StructPollfd;I)I"),
+    NATIVE_METHOD(Posix, posix_fallocate, "(Ljava/io/FileDescriptor;JJ)V"),
+    NATIVE_METHOD(Posix, prctl, "(IJJJJ)I"),
     NATIVE_METHOD(Posix, preadBytes, "(Ljava/io/FileDescriptor;Ljava/lang/Object;IIJ)I"),
     NATIVE_METHOD(Posix, pwriteBytes, "(Ljava/io/FileDescriptor;Ljava/lang/Object;IIJ)I"),
     NATIVE_METHOD(Posix, readBytes, "(Ljava/io/FileDescriptor;Ljava/lang/Object;II)I"),
+    NATIVE_METHOD(Posix, readlink, "(Ljava/lang/String;)Ljava/lang/String;"),
     NATIVE_METHOD(Posix, readv, "(Ljava/io/FileDescriptor;[Ljava/lang/Object;[I[I)I"),
     NATIVE_METHOD(Posix, recvfromBytes, "(Ljava/io/FileDescriptor;Ljava/lang/Object;IIILjava/net/InetSocketAddress;)I"),
     NATIVE_METHOD(Posix, remove, "(Ljava/lang/String;)V"),
     NATIVE_METHOD(Posix, rename, "(Ljava/lang/String;Ljava/lang/String;)V"),
-    NATIVE_METHOD(Posix, sendfile, "(Ljava/io/FileDescriptor;Ljava/io/FileDescriptor;Llibcore/util/MutableLong;J)J"),
+    NATIVE_METHOD(Posix, sendfile, "(Ljava/io/FileDescriptor;Ljava/io/FileDescriptor;Landroid/util/MutableLong;J)J"),
     NATIVE_METHOD(Posix, sendtoBytes, "(Ljava/io/FileDescriptor;Ljava/lang/Object;IIILjava/net/InetAddress;I)I"),
     NATIVE_METHOD(Posix, setegid, "(I)V"),
     NATIVE_METHOD(Posix, setenv, "(Ljava/lang/String;Ljava/lang/String;Z)V"),
@@ -1675,15 +1861,16 @@ static JNINativeMethod gMethods[] = {
     NATIVE_METHOD(Posix, setsockoptIfreq, "(Ljava/io/FileDescriptor;IILjava/lang/String;)V"),
     NATIVE_METHOD(Posix, setsockoptInt, "(Ljava/io/FileDescriptor;III)V"),
     NATIVE_METHOD(Posix, setsockoptIpMreqn, "(Ljava/io/FileDescriptor;III)V"),
-    NATIVE_METHOD(Posix, setsockoptGroupReq, "(Ljava/io/FileDescriptor;IILlibcore/io/StructGroupReq;)V"),
-    NATIVE_METHOD(Posix, setsockoptLinger, "(Ljava/io/FileDescriptor;IILlibcore/io/StructLinger;)V"),
-    NATIVE_METHOD(Posix, setsockoptTimeval, "(Ljava/io/FileDescriptor;IILlibcore/io/StructTimeval;)V"),
+    NATIVE_METHOD(Posix, setsockoptGroupReq, "(Ljava/io/FileDescriptor;IILandroid/system/StructGroupReq;)V"),
+    NATIVE_METHOD(Posix, setsockoptGroupSourceReq, "(Ljava/io/FileDescriptor;IILandroid/system/StructGroupSourceReq;)V"),
+    NATIVE_METHOD(Posix, setsockoptLinger, "(Ljava/io/FileDescriptor;IILandroid/system/StructLinger;)V"),
+    NATIVE_METHOD(Posix, setsockoptTimeval, "(Ljava/io/FileDescriptor;IILandroid/system/StructTimeval;)V"),
     NATIVE_METHOD(Posix, setuid, "(I)V"),
     NATIVE_METHOD(Posix, shutdown, "(Ljava/io/FileDescriptor;I)V"),
     NATIVE_METHOD(Posix, socket, "(III)Ljava/io/FileDescriptor;"),
     NATIVE_METHOD(Posix, socketpair, "(IIILjava/io/FileDescriptor;Ljava/io/FileDescriptor;)V"),
-    NATIVE_METHOD(Posix, stat, "(Ljava/lang/String;)Llibcore/io/StructStat;"),
-    NATIVE_METHOD(Posix, statfs, "(Ljava/lang/String;)Llibcore/io/StructStatFs;"),
+    NATIVE_METHOD(Posix, stat, "(Ljava/lang/String;)Landroid/system/StructStat;"),
+    NATIVE_METHOD(Posix, statvfs, "(Ljava/lang/String;)Landroid/system/StructStatVfs;"),
     NATIVE_METHOD(Posix, strerror, "(I)Ljava/lang/String;"),
     NATIVE_METHOD(Posix, strsignal, "(I)Ljava/lang/String;"),
     NATIVE_METHOD(Posix, symlink, "(Ljava/lang/String;Ljava/lang/String;)V"),
@@ -1691,9 +1878,9 @@ static JNINativeMethod gMethods[] = {
     NATIVE_METHOD(Posix, tcdrain, "(Ljava/io/FileDescriptor;)V"),
     NATIVE_METHOD(Posix, tcsendbreak, "(Ljava/io/FileDescriptor;I)V"),
     NATIVE_METHOD(Posix, umaskImpl, "(I)I"),
-    NATIVE_METHOD(Posix, uname, "()Llibcore/io/StructUtsname;"),
+    NATIVE_METHOD(Posix, uname, "()Landroid/system/StructUtsname;"),
     NATIVE_METHOD(Posix, unsetenv, "(Ljava/lang/String;)V"),
-    NATIVE_METHOD(Posix, waitpid, "(ILlibcore/util/MutableInt;I)I"),
+    NATIVE_METHOD(Posix, waitpid, "(ILandroid/util/MutableInt;I)I"),
     NATIVE_METHOD(Posix, writeBytes, "(Ljava/io/FileDescriptor;Ljava/lang/Object;II)I"),
     NATIVE_METHOD(Posix, writev, "(Ljava/io/FileDescriptor;[Ljava/lang/Object;[I[I)I"),
 };

@@ -122,8 +122,8 @@ public class OutputStreamWriter extends Writer {
     }
 
     /**
-     * Closes this writer. This implementation flushes the buffer as well as the
-     * target stream. The target stream is then closed and the resources for the
+     * Closes this writer. This implementation flushes the buffer but <strong>does not</strong>
+     * flush the target stream. The target stream is then closed and the resources for the
      * buffer and converter are released.
      *
      * <p>Only the first invocation of this method has any effect. Subsequent calls
@@ -225,7 +225,7 @@ public class OutputStreamWriter extends Writer {
     }
 
     /**
-     * Returns the historical name of the encoding used by this writer to convert characters to
+     * Returns the canonical name of the encoding used by this writer to convert characters to
      * bytes, or null if this writer has been closed. Most callers should probably keep
      * track of the String or Charset they passed in; this method may not return the same
      * name.
@@ -234,7 +234,7 @@ public class OutputStreamWriter extends Writer {
         if (encoder == null) {
             return null;
         }
-        return HistoricalCharsetNames.get(encoder.charset());
+        return encoder.charset().name();
     }
 
     /**

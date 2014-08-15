@@ -28,17 +28,11 @@
 #include "unicode/uloc.h"
 #include "unicode/ustring.h"
 
-Locale getLocale(JNIEnv* env, jstring localeName) {
-  return Locale::createFromName(ScopedUtfChars(env, localeName).c_str());
-}
-
-jobjectArray fromStringEnumeration(JNIEnv* env, StringEnumeration* se) {
-  UniquePtr<StringEnumeration> deleter(se);
-  if (se == NULL) {
+jobjectArray fromStringEnumeration(JNIEnv* env, UErrorCode& status, const char* provider, StringEnumeration* se) {
+  if (maybeThrowIcuException(env, provider, status)) {
     return NULL;
   }
 
-  UErrorCode status = U_ZERO_ERROR;
   int32_t count = se->count(status);
   if (maybeThrowIcuException(env, "StringEnumeration::count", status)) {
     return NULL;
@@ -67,6 +61,8 @@ bool maybeThrowIcuException(JNIEnv* env, const char* function, UErrorCode error)
     exceptionClass = "java/lang/ArrayIndexOutOfBoundsException";
   } else if (error == U_UNSUPPORTED_ERROR) {
     exceptionClass = "java/lang/UnsupportedOperationException";
+  } else if (error == U_FORMAT_INEXACT_ERROR) {
+    exceptionClass = "java/lang/ArithmeticException";
   }
   jniThrowExceptionFmt(env, exceptionClass, "%s failed: %s", function, u_errorName(error));
   return true;

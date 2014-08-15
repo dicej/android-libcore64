@@ -15,33 +15,37 @@
  */
 package java.nio;
 
+import android.system.ErrnoException;
+import android.system.StructPollfd;
 import java.io.FileDescriptor;
+import java.io.InterruptedIOException;
 import java.io.IOException;
 import java.nio.channels.ClosedSelectorException;
 import java.nio.channels.IllegalSelectorException;
-import java.nio.channels.SelectableChannel;
 import java.nio.channels.SelectionKey;
-import static java.nio.channels.SelectionKey.*;
 import java.nio.channels.Selector;
-import java.nio.channels.SocketChannel;
 import java.nio.channels.spi.AbstractSelectableChannel;
 import java.nio.channels.spi.AbstractSelectionKey;
 import java.nio.channels.spi.AbstractSelector;
 import java.nio.channels.spi.SelectorProvider;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Set;
 import java.util.UnsafeArrayList;
-import libcore.io.ErrnoException;
 import libcore.io.IoBridge;
 import libcore.io.IoUtils;
 import libcore.io.Libcore;
-import libcore.io.StructPollfd;
-import libcore.util.EmptyArray;
-import static libcore.io.OsConstants.*;
+
+import static android.system.OsConstants.EINTR;
+import static android.system.OsConstants.POLLHUP;
+import static android.system.OsConstants.POLLIN;
+import static android.system.OsConstants.POLLOUT;
+import static java.nio.channels.SelectionKey.OP_ACCEPT;
+import static java.nio.channels.SelectionKey.OP_CONNECT;
+import static java.nio.channels.SelectionKey.OP_READ;
+import static java.nio.channels.SelectionKey.OP_WRITE;
 
 /*
  * Default implementation of java.nio.channels.Selector
@@ -84,7 +88,7 @@ final class SelectorImpl extends AbstractSelector {
         super(selectorProvider);
 
         /*
-         * Create a pipes to trigger wakeup. We can't use a NIO pipe because it
+         * Create a pipe to trigger wakeup. We can't use a NIO pipe because it
          * would be closed if the selecting thread is interrupted. Also
          * configure the pipe so we can fully drain it without blocking.
          */
@@ -166,13 +170,13 @@ final class SelectorImpl extends AbstractSelector {
             synchronized (unmodifiableKeys) {
                 synchronized (selectedKeys) {
                     doCancel();
-                    boolean isBlock = (timeout != 0);
+                    boolean isBlocking = (timeout != 0);
                     synchronized (keysLock) {
                         preparePollFds();
                     }
                     int rc = -1;
                     try {
-                        if (isBlock) {
+                        if (isBlocking) {
                             begin();
                         }
                         try {
@@ -183,7 +187,7 @@ final class SelectorImpl extends AbstractSelector {
                             }
                         }
                     } finally {
-                        if (isBlock) {
+                        if (isBlocking) {
                             end();
                         }
                     }
@@ -254,24 +258,30 @@ final class SelectorImpl extends AbstractSelector {
             pollFd.userData = null;
 
             int ops = key.interestOpsNoCheck();
-            int selectedOp = 0;
+            int selectedOps = 0;
+            if ((pollFd.revents & POLLHUP) != 0) {
+                // If there was an error condition, we definitely want to wake listeners,
+                // regardless of what they're waiting for. Failure is always interesting.
+                selectedOps |= ops;
+            }
             if ((pollFd.revents & POLLIN) != 0) {
-                selectedOp = ops & (OP_ACCEPT | OP_READ);
-            } else if ((pollFd.revents & POLLOUT) != 0) {
+                selectedOps |= ops & (OP_ACCEPT | OP_READ);
+            }
+            if ((pollFd.revents & POLLOUT) != 0) {
                 if (key.isConnected()) {
-                    selectedOp = ops & OP_WRITE;
+                    selectedOps |= ops & OP_WRITE;
                 } else {
-                    selectedOp = ops & OP_CONNECT;
+                    selectedOps |= ops & OP_CONNECT;
                 }
             }
 
-            if (selectedOp != 0) {
+            if (selectedOps != 0) {
                 boolean wasSelected = mutableSelectedKeys.contains(key);
-                if (wasSelected && key.readyOps() != selectedOp) {
-                    key.setReadyOps(key.readyOps() | selectedOp);
+                if (wasSelected && key.readyOps() != selectedOps) {
+                    key.setReadyOps(key.readyOps() | selectedOps);
                     ++readyKeyCount;
                 } else if (!wasSelected) {
-                    key.setReadyOps(selectedOp);
+                    key.setReadyOps(selectedOps);
                     mutableSelectedKeys.add(key);
                     ++readyKeyCount;
                 }
@@ -288,7 +298,7 @@ final class SelectorImpl extends AbstractSelector {
 
     /**
      * Removes cancelled keys from the key set and selected key set, and
-     * deregisters the corresponding channels. Returns the number of keys
+     * unregisters the corresponding channels. Returns the number of keys
      * removed from the selected key set.
      */
     private int doCancel() {
@@ -315,6 +325,7 @@ final class SelectorImpl extends AbstractSelector {
         try {
             Libcore.os.write(wakeupOut, new byte[] { 1 }, 0, 1);
         } catch (ErrnoException ignored) {
+        } catch (InterruptedIOException ignored) {
         }
         return this;
     }

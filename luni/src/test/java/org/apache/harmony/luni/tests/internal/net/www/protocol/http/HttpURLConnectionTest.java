@@ -17,8 +17,6 @@
 
 package org.apache.harmony.luni.tests.internal.net.www.protocol.http;
 
-import dalvik.annotation.SideEffect;
-
 import java.io.IOException;
 import java.net.Authenticator;
 import java.net.HttpURLConnection;
@@ -261,12 +259,16 @@ public class HttpURLConnectionTest extends TestCase {
             assertTrue("Connection does not use proxy",
                                             connection.usingProxy());
             assertTrue("Proxy server was not used", proxy.accepted);
+
+            connection.disconnect();
+            assertTrue("usingProxy broken after disconnect",
+                   connection.usingProxy());
         } finally {
             // restore default proxy selector
             ProxySelector.setDefault(defPS);
         }
     }
-    @SideEffect("Suffers from side effect of other, currently unknown test")
+    // SideEffect: Suffers from side effect of other, currently unknown test
     public void testProxyAuthorization() throws Exception {
         // Set up test Authenticator
         Authenticator.setDefault(new Authenticator() {

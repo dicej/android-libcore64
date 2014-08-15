@@ -34,12 +34,12 @@
 #include <time.h>
 #include <unistd.h>
 
-#if defined(__APPLE__)
-#include <mach/mach_time.h>
-#endif
-
 #if defined(__MINGW32__) || defined(__MINGW64__)
 #include "mingw-extensions.h"
+#endif
+
+#if defined(HAVE_ANDROID_OS)
+extern "C" void android_get_LD_LIBRARY_PATH(char*, size_t);
 #endif
 
 static void System_log(JNIEnv* env, jclass, jchar type, jstring javaMessage, jthrowable exception) {
@@ -96,6 +96,19 @@ static jobjectArray System_specialProperties(JNIEnv* env, jclass) {
     properties.push_back("line.separator=\r\n");
     properties.push_back("path.separator=;");
 #endif
+
+    const char* library_path = getenv("LD_LIBRARY_PATH");
+#if defined(HAVE_ANDROID_OS)
+    if (library_path == NULL) {
+        android_get_LD_LIBRARY_PATH(path, sizeof(path));
+        library_path = path;
+    }
+#endif
+    if (library_path == NULL) {
+        library_path = "";
+    }
+    properties.push_back(std::string("java.library.path=") + library_path);
+
     return toStringArray(env, properties);
 }
 
@@ -107,14 +120,14 @@ static jlong System_currentTimeMillis(JNIEnv*, jclass) {
 }
 
 static jlong System_nanoTime(JNIEnv*, jclass) {
-#if defined(__APPLE__)
-    mach_timebase_info_data_t info;
-    mach_timebase_info(&info);
-    return mach_absolute_time() * (info.numer / info.denom);
-#else
+#if defined(HAVE_POSIX_CLOCKS)
     timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
     return now.tv_sec * 1000000000LL + now.tv_nsec;
+#else
+    timeval now;
+    gettimeofday(&now, NULL);
+    return static_cast<jlong>(now.tv_sec) * 1000000000LL + now.tv_usec * 1000LL;
 #endif
 }
 
@@ -131,10 +144,10 @@ static jstring System_mapLibraryName(JNIEnv* env, jclass, jstring javaName) {
 }
 
 static JNINativeMethod gMethods[] = {
-    NATIVE_METHOD(System, currentTimeMillis, "()J"),
+    NATIVE_METHOD(System, currentTimeMillis, "!()J"),
     NATIVE_METHOD(System, log, "(CLjava/lang/String;Ljava/lang/Throwable;)V"),
     NATIVE_METHOD(System, mapLibraryName, "(Ljava/lang/String;)Ljava/lang/String;"),
-    NATIVE_METHOD(System, nanoTime, "()J"),
+    NATIVE_METHOD(System, nanoTime, "!()J"),
     NATIVE_METHOD(System, setFieldImpl, "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Object;)V"),
     NATIVE_METHOD(System, specialProperties, "()[Ljava/lang/String;"),
 };

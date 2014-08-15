@@ -81,7 +81,7 @@ public abstract class DoubleBuffer extends Buffer implements
      *            the length, must not be negative and not greater than
      *            {@code array.length - start}.
      * @return the created double buffer.
-     * @exception IndexOutOfBoundsException
+     * @throws IndexOutOfBoundsException
      *                if either {@code start} or {@code doubleCount} is invalid.
      */
     public static DoubleBuffer wrap(double[] array, int start, int doubleCount) {
@@ -92,8 +92,8 @@ public abstract class DoubleBuffer extends Buffer implements
         return buf;
     }
 
-    DoubleBuffer(int capacity) {
-        super(3, capacity, null);
+    DoubleBuffer(int capacity, long effectiveDirectAddress) {
+        super(3, capacity, effectiveDirectAddress);
     }
 
     public final double[] array() {
@@ -127,7 +127,7 @@ public abstract class DoubleBuffer extends Buffer implements
      * limit is set to capacity; the mark is cleared.
      *
      * @return this buffer.
-     * @exception ReadOnlyBufferException
+     * @throws ReadOnlyBufferException
      *                if no changes may be made to the contents of this buffer.
      */
     public abstract DoubleBuffer compact();
@@ -141,7 +141,7 @@ public abstract class DoubleBuffer extends Buffer implements
      * @return a negative value if this is less than {@code other}; 0 if this
      *         equals to {@code other}; a positive value if this is greater
      *         than {@code other}.
-     * @exception ClassCastException
+     * @throws ClassCastException
      *                if {@code other} is not a double buffer.
      */
     public int compareTo(DoubleBuffer otherBuffer) {
@@ -173,10 +173,8 @@ public abstract class DoubleBuffer extends Buffer implements
      * order are the same as this buffer's, too.
      * <p>
      * The new buffer shares its content with this buffer, which means either
-     * buffer's change of content will be visible to the other. The two buffer's
+     * buffer's change of content will be visible to the other. The two buffers'
      * position, limit and mark are independent.
-     *
-     * @return a duplicated buffer that shares its content with this buffer.
      */
     public abstract DoubleBuffer duplicate();
 
@@ -225,7 +223,7 @@ public abstract class DoubleBuffer extends Buffer implements
      * 1.
      *
      * @return the double at the current position.
-     * @exception BufferUnderflowException
+     * @throws BufferUnderflowException
      *                if the position is equal or greater than limit.
      */
     public abstract double get();
@@ -240,7 +238,7 @@ public abstract class DoubleBuffer extends Buffer implements
      * @param dst
      *            the destination double array.
      * @return this buffer.
-     * @exception BufferUnderflowException
+     * @throws BufferUnderflowException
      *                if {@code dst.length} is greater than {@code remaining()}.
      */
     public DoubleBuffer get(double[] dst) {
@@ -261,9 +259,9 @@ public abstract class DoubleBuffer extends Buffer implements
      *            the number of doubles to read, must be no less than zero and
      *            not greater than {@code dst.length - dstOffset}.
      * @return this buffer.
-     * @exception IndexOutOfBoundsException
+     * @throws IndexOutOfBoundsException
      *                if either {@code dstOffset} or {@code doubleCount} is invalid.
-     * @exception BufferUnderflowException
+     * @throws BufferUnderflowException
      *                if {@code doubleCount} is greater than {@code remaining()}.
      */
     public DoubleBuffer get(double[] dst, int dstOffset, int doubleCount) {
@@ -283,7 +281,7 @@ public abstract class DoubleBuffer extends Buffer implements
      * @param index
      *            the index, must not be negative and less than limit.
      * @return a double at the specified index.
-     * @exception IndexOutOfBoundsException
+     * @throws IndexOutOfBoundsException
      *                if index is invalid.
      */
     public abstract double get(int index);
@@ -362,9 +360,9 @@ public abstract class DoubleBuffer extends Buffer implements
      * @param d
      *            the double to write.
      * @return this buffer.
-     * @exception BufferOverflowException
+     * @throws BufferOverflowException
      *                if position is equal or greater than limit.
-     * @exception ReadOnlyBufferException
+     * @throws ReadOnlyBufferException
      *                if no changes may be made to the contents of this buffer.
      */
     public abstract DoubleBuffer put(double d);
@@ -379,9 +377,9 @@ public abstract class DoubleBuffer extends Buffer implements
      * @param src
      *            the source double array.
      * @return this buffer.
-     * @exception BufferOverflowException
+     * @throws BufferOverflowException
      *                if {@code remaining()} is less than {@code src.length}.
-     * @exception ReadOnlyBufferException
+     * @throws ReadOnlyBufferException
      *                if no changes may be made to the contents of this buffer.
      */
     public final DoubleBuffer put(double[] src) {
@@ -402,11 +400,11 @@ public abstract class DoubleBuffer extends Buffer implements
      *            the number of doubles to write, must be no less than zero and
      *            not greater than {@code src.length - srcOffset}.
      * @return this buffer.
-     * @exception BufferOverflowException
+     * @throws BufferOverflowException
      *                if {@code remaining()} is less than {@code doubleCount}.
-     * @exception IndexOutOfBoundsException
+     * @throws IndexOutOfBoundsException
      *                if either {@code srcOffset} or {@code doubleCount} is invalid.
-     * @exception ReadOnlyBufferException
+     * @throws ReadOnlyBufferException
      *                if no changes may be made to the contents of this buffer.
      */
     public DoubleBuffer put(double[] src, int srcOffset, int doubleCount) {
@@ -428,12 +426,12 @@ public abstract class DoubleBuffer extends Buffer implements
      * @param src
      *            the source double buffer.
      * @return this buffer.
-     * @exception BufferOverflowException
+     * @throws BufferOverflowException
      *                if {@code src.remaining()} is greater than this buffer's
      *                {@code remaining()}.
-     * @exception IllegalArgumentException
+     * @throws IllegalArgumentException
      *                if {@code src} is this buffer.
-     * @exception ReadOnlyBufferException
+     * @throws ReadOnlyBufferException
      *                if no changes may be made to the contents of this buffer.
      */
     public DoubleBuffer put(DoubleBuffer src) {
@@ -461,9 +459,9 @@ public abstract class DoubleBuffer extends Buffer implements
      * @param d
      *            the double to write.
      * @return this buffer.
-     * @exception IndexOutOfBoundsException
+     * @throws IndexOutOfBoundsException
      *                if index is invalid.
-     * @exception ReadOnlyBufferException
+     * @throws ReadOnlyBufferException
      *                if no changes may be made to the contents of this buffer.
      */
     public abstract DoubleBuffer put(int index, double d);
@@ -478,10 +476,8 @@ public abstract class DoubleBuffer extends Buffer implements
      * the same as this buffer's.
      * <p>
      * The new buffer shares its content with this buffer, which means either
-     * buffer's change of content will be visible to the other. The two buffer's
+     * buffer's change of content will be visible to the other. The two buffers'
      * position, limit and mark are independent.
-     *
-     * @return a sliced buffer that shares its content with this buffer.
      */
     public abstract DoubleBuffer slice();
 }

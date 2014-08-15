@@ -76,7 +76,7 @@ public final class Scanner implements Closeable, Iterator<String> {
     private static final Pattern MULTI_LINE_TERMINATOR = Pattern.compile("(" + NL + ")+");
 
     // Pattern used to recognize a line with a line terminator.
-    private static final Pattern LINE_PATTERN = Pattern.compile(".*(" + NL + ")|.+(" + NL + ")?");
+    private static final Pattern LINE_PATTERN = Pattern.compile(".*(" + NL + ")|.+$");
 
     // The pattern matches anything.
     private static final Pattern ANY_PATTERN = Pattern.compile("(?s).*");
@@ -86,7 +86,7 @@ public final class Scanner implements Closeable, Iterator<String> {
     // The input source of scanner.
     private Readable input;
 
-    private CharBuffer buffer;
+    private CharBuffer buffer = CharBuffer.allocate(1024);
 
     private Pattern delimiter = DEFAULT_DELIMITER;
 
@@ -125,17 +125,6 @@ public final class Scanner implements Closeable, Iterator<String> {
     private int cachedIntegerPatternRadix = -1;
     private Pattern cachedIntegerPattern = null;
 
-    private enum DataType {
-        /*
-         * Stands for Integer
-         */
-        INT,
-        /*
-         * Stands for Float
-         */
-        FLOAT;
-    }
-
     /**
      * Creates a {@code Scanner} with the specified {@code File} as input. The default charset
      * is applied when reading the file.
@@ -170,13 +159,15 @@ public final class Scanner implements Closeable, Iterator<String> {
         if (charsetName == null) {
             throw new IllegalArgumentException("charsetName == null");
         }
+
+        InputStreamReader streamReader;
         try {
-            input = new InputStreamReader(fis, charsetName);
+            streamReader = new InputStreamReader(fis, charsetName);
         } catch (UnsupportedEncodingException e) {
             IoUtils.closeQuietly(fis);
             throw new IllegalArgumentException(e.getMessage());
         }
-        initialization();
+        initialize(streamReader);
     }
 
     /**
@@ -186,8 +177,7 @@ public final class Scanner implements Closeable, Iterator<String> {
      *            the string to be scanned.
      */
     public Scanner(String src) {
-        input = new StringReader(src);
-        initialization();
+        initialize(new StringReader(src));
     }
 
     /**
@@ -216,12 +206,14 @@ public final class Scanner implements Closeable, Iterator<String> {
         if (src == null) {
             throw new NullPointerException("src == null");
         }
+
+        InputStreamReader streamReader;
         try {
-            input = new InputStreamReader(src, charsetName);
+            streamReader = new InputStreamReader(src, charsetName);
         } catch (UnsupportedEncodingException e) {
             throw new IllegalArgumentException(e.getMessage());
         }
-        initialization();
+        initialize(streamReader);
     }
 
     /**
@@ -234,8 +226,7 @@ public final class Scanner implements Closeable, Iterator<String> {
         if (src == null) {
             throw new NullPointerException("src == null");
         }
-        input = src;
-        initialization();
+        initialize(src);
     }
 
     /**
@@ -267,8 +258,14 @@ public final class Scanner implements Closeable, Iterator<String> {
         if (charsetName == null) {
             throw new IllegalArgumentException("charsetName == null");
         }
-        input = Channels.newReader(src, charsetName);
-        initialization();
+        initialize(Channels.newReader(src, charsetName));
+    }
+
+    private void initialize(Readable input) {
+        this.input = input;
+        matcher = delimiter.matcher("");
+        matcher.useTransparentBounds(true);
+        matcher.useAnchoringBounds(false);
     }
 
     /**
@@ -454,20 +451,12 @@ public final class Scanner implements Closeable, Iterator<String> {
         matcher.usePattern(pattern);
 
         String result = null;
-        int findEndIndex = 0;
-        int horizonEndIndex = 0;
-        if (horizon == 0) {
-            horizonEndIndex = Integer.MAX_VALUE;
-        } else {
-            horizonEndIndex = findStartIndex + horizon;
-        }
+        int horizonEndIndex = (horizon == 0) ? Integer.MAX_VALUE : findStartIndex + horizon;
         while (true) {
-            findEndIndex = bufferLength;
-
             // If horizon > 0, then search up to
             // min( bufferLength, findStartIndex + horizon).
             // Otherwise search until readable is exhausted.
-            findEndIndex = Math.min(horizonEndIndex, bufferLength);
+            int findEndIndex = Math.min(horizonEndIndex, bufferLength);
             // If horizon == 0, consider horizon as always outside buffer.
             boolean isHorizonInBuffer = (horizonEndIndex <= bufferLength);
             // First, try to find pattern within buffer. If pattern can not be
@@ -475,7 +464,7 @@ public final class Scanner implements Closeable, Iterator<String> {
             // util horizonEndIndex is exceeded or no more input left.
             matcher.region(findStartIndex, findEndIndex);
             if (matcher.find()) {
-                if (isHorizonInBuffer || inputExhausted) {
+                if ((horizon == 0 && !matcher.hitEnd()) || isHorizonInBuffer || inputExhausted) {
                     result = matcher.group();
                     break;
                 }
@@ -553,7 +542,7 @@ public final class Scanner implements Closeable, Iterator<String> {
         checkOpen();
         checkNotNull(pattern);
         matchSuccessful = false;
-        saveCurrentStatus();
+        prepareForScan();
         // if the next token exists, set the match region, otherwise return
         // false
         if (!setTokenRegion()) {
@@ -644,7 +633,7 @@ public final class Scanner implements Closeable, Iterator<String> {
         boolean isBigIntegerValue = false;
         if (hasNext(integerPattern)) {
             String intString = matcher.group();
-            intString = removeLocaleInfo(intString, DataType.INT);
+            intString = removeLocaleInfo(intString, int.class);
             try {
                 cachedNextValue = new BigInteger(intString, radix);
                 isBigIntegerValue = true;
@@ -698,7 +687,7 @@ public final class Scanner implements Closeable, Iterator<String> {
         boolean isByteValue = false;
         if (hasNext(integerPattern)) {
             String intString = matcher.group();
-            intString = removeLocaleInfo(intString, DataType.INT);
+            intString = removeLocaleInfo(intString, int.class);
             try {
                 cachedNextValue = Byte.valueOf(intString, radix);
                 isByteValue = true;
@@ -790,7 +779,7 @@ public final class Scanner implements Closeable, Iterator<String> {
         boolean isIntValue = false;
         if (hasNext(integerPattern)) {
             String intString = matcher.group();
-            intString = removeLocaleInfo(intString, DataType.INT);
+            intString = removeLocaleInfo(intString, int.class);
             try {
                 cachedNextValue = Integer.valueOf(intString, radix);
                 isIntValue = true;
@@ -802,39 +791,16 @@ public final class Scanner implements Closeable, Iterator<String> {
     }
 
     /**
-     * Returns whether there is a line terminator in the input.
+     * Returns true if there is a line terminator in the input.
      * This method may block.
      *
-     * @return {@code true} if there is a line terminator in the input,
-     *         otherwise, {@code false}.
-     * @throws IllegalStateException
-     *             if the {@code Scanner} is closed.
+     * @throws IllegalStateException if this {@code Scanner} is closed.
      */
     public boolean hasNextLine() {
-        checkOpen();
-        matcher.usePattern(LINE_PATTERN);
-        matcher.region(findStartIndex, bufferLength);
-
-        boolean hasNextLine = false;
-        while (true) {
-            if (matcher.find()) {
-                if (inputExhausted || matcher.end() != bufferLength) {
-                    matchSuccessful = true;
-                    hasNextLine = true;
-                    break;
-                }
-            } else {
-                if (inputExhausted) {
-                    matchSuccessful = false;
-                    break;
-                }
-            }
-            if (!inputExhausted) {
-                readMore();
-                resetMatcher();
-            }
-        }
-        return hasNextLine;
+        prepareForScan();
+        String result = findWithinHorizon(LINE_PATTERN, 0);
+        recoverPreviousStatus();
+        return result != null;
     }
 
     /**
@@ -867,7 +833,7 @@ public final class Scanner implements Closeable, Iterator<String> {
         boolean isLongValue = false;
         if (hasNext(integerPattern)) {
             String intString = matcher.group();
-            intString = removeLocaleInfo(intString, DataType.INT);
+            intString = removeLocaleInfo(intString, int.class);
             try {
                 cachedNextValue = Long.valueOf(intString, radix);
                 isLongValue = true;
@@ -908,7 +874,7 @@ public final class Scanner implements Closeable, Iterator<String> {
         boolean isShortValue = false;
         if (hasNext(integerPattern)) {
             String intString = matcher.group();
-            intString = removeLocaleInfo(intString, DataType.INT);
+            intString = removeLocaleInfo(intString, int.class);
             try {
                 cachedNextValue = Short.valueOf(intString, radix);
                 isShortValue = true;
@@ -995,7 +961,7 @@ public final class Scanner implements Closeable, Iterator<String> {
         checkOpen();
         checkNotNull(pattern);
         matchSuccessful = false;
-        saveCurrentStatus();
+        prepareForScan();
         if (!setTokenRegion()) {
             recoverPreviousStatus();
             // if setting match region fails
@@ -1122,7 +1088,7 @@ public final class Scanner implements Closeable, Iterator<String> {
         }
         Pattern integerPattern = getIntegerPattern(radix);
         String intString = next(integerPattern);
-        intString = removeLocaleInfo(intString, DataType.INT);
+        intString = removeLocaleInfo(intString, int.class);
         BigInteger bigIntegerValue;
         try {
             bigIntegerValue = new BigInteger(intString, radix);
@@ -1200,7 +1166,7 @@ public final class Scanner implements Closeable, Iterator<String> {
         }
         Pattern integerPattern = getIntegerPattern(radix);
         String intString = next(integerPattern);
-        intString = removeLocaleInfo(intString, DataType.INT);
+        intString = removeLocaleInfo(intString, int.class);
         byte byteValue = 0;
         try {
             byteValue = Byte.parseByte(intString, radix);
@@ -1245,7 +1211,7 @@ public final class Scanner implements Closeable, Iterator<String> {
         Pattern floatPattern = getFloatPattern();
         String floatString = next(floatPattern);
         floatString = removeLocaleInfoFromFloat(floatString);
-        double doubleValue = 0;
+        double doubleValue;
         try {
             doubleValue = Double.parseDouble(floatString);
         } catch (NumberFormatException e) {
@@ -1289,7 +1255,7 @@ public final class Scanner implements Closeable, Iterator<String> {
         Pattern floatPattern = getFloatPattern();
         String floatString = next(floatPattern);
         floatString = removeLocaleInfoFromFloat(floatString);
-        float floatValue = 0;
+        float floatValue;
         try {
             floatValue = Float.parseFloat(floatString);
         } catch (NumberFormatException e) {
@@ -1350,8 +1316,8 @@ public final class Scanner implements Closeable, Iterator<String> {
         }
         Pattern integerPattern = getIntegerPattern(radix);
         String intString = next(integerPattern);
-        intString = removeLocaleInfo(intString, DataType.INT);
-        int intValue = 0;
+        intString = removeLocaleInfo(intString, int.class);
+        int intValue;
         try {
             intValue = Integer.parseInt(intString, radix);
         } catch (NumberFormatException e) {
@@ -1380,7 +1346,8 @@ public final class Scanner implements Closeable, Iterator<String> {
 
         matcher.usePattern(LINE_PATTERN);
         matcher.region(findStartIndex, bufferLength);
-        String result = null;
+
+        String result;
         while (true) {
             if (matcher.find()) {
                 if (inputExhausted || matcher.end() != bufferLength
@@ -1461,8 +1428,8 @@ public final class Scanner implements Closeable, Iterator<String> {
         }
         Pattern integerPattern = getIntegerPattern(radix);
         String intString = next(integerPattern);
-        intString = removeLocaleInfo(intString, DataType.INT);
-        long longValue = 0;
+        intString = removeLocaleInfo(intString, int.class);
+        long longValue;
         try {
             longValue = Long.parseLong(intString, radix);
         } catch (NumberFormatException e) {
@@ -1523,8 +1490,8 @@ public final class Scanner implements Closeable, Iterator<String> {
         }
         Pattern integerPattern = getIntegerPattern(radix);
         String intString = next(integerPattern);
-        intString = removeLocaleInfo(intString, DataType.INT);
-        short shortValue = 0;
+        intString = removeLocaleInfo(intString, int.class);
+        short shortValue;
         try {
             shortValue = Short.parseShort(intString, radix);
         } catch (NumberFormatException e) {
@@ -1689,15 +1656,6 @@ public final class Scanner implements Closeable, Iterator<String> {
         throw new UnsupportedOperationException();
     }
 
-    /*
-     * Initialize some components.
-     */
-    private void initialization() {
-        buffer = CharBuffer.allocate(1024);
-        buffer.limit(0);
-        matcher = delimiter.matcher(buffer);
-    }
-
     private void checkOpen() {
         if (closed) {
             throw new IllegalStateException();
@@ -1711,21 +1669,46 @@ public final class Scanner implements Closeable, Iterator<String> {
     }
 
     /*
-     * Change the matcher's string after reading input
+     * Change the matcher's input after modifying the contents of the buffer.
+     * The current implementation of Matcher causes a copy of the buffer to be taken.
      */
     private void resetMatcher() {
-        if (matcher == null) {
-            matcher = delimiter.matcher(buffer);
-        } else {
-            matcher.reset(buffer);
-        }
+        matcher.reset(buffer);
         matcher.region(findStartIndex, bufferLength);
     }
 
     /*
-     * Save the matcher's last find position
+     * Recover buffer space for characters that are already processed and save the matcher's state
+     * in case parsing fails. See recoverPrevousState. This method must be called before
+     * any buffer offsets are calculated.
      */
-    private void saveCurrentStatus() {
+    private void prepareForScan() {
+        // Compacting the buffer recovers space taken by already processed characters. This does not
+        // prevent the buffer growing in all situations but keeps the buffer small when delimiters
+        // exist regularly.
+        if (findStartIndex >= buffer.capacity() / 2) {
+            // When over half the buffer is filled with characters no longer being considered by the
+            // scanner we take the cost of compacting the buffer.
+
+            // Move all characters from [findStartIndex, findStartIndex + remaining()) to
+            // [0, remaining()).
+            int oldPosition = buffer.position();
+            buffer.position(findStartIndex);
+            buffer.compact();
+            buffer.position(oldPosition);
+
+            // Update Scanner state to reflect the new buffer state.
+            bufferLength -= findStartIndex;
+            findStartIndex = 0;
+            preStartIndex = -1;
+
+            // The matcher must also be informed that the buffer has changed because it operates on
+            // a String copy.
+            resetMatcher();
+        }
+
+        // Save the matcher's last find position so it can be returned to if the next token cannot
+        // be parsed.
         preStartIndex = findStartIndex;
     }
 
@@ -1852,24 +1835,24 @@ public final class Scanner implements Closeable, Iterator<String> {
         if ((exponentIndex = floatString.indexOf('e')) != -1 || (exponentIndex = floatString.indexOf('E')) != -1) {
             String decimalNumeralString = floatString.substring(0, exponentIndex);
             String exponentString = floatString.substring(exponentIndex + 1, floatString.length());
-            decimalNumeralString = removeLocaleInfo(decimalNumeralString, DataType.FLOAT);
+            decimalNumeralString = removeLocaleInfo(decimalNumeralString, float.class);
             return decimalNumeralString + "e" + exponentString;
         }
-        return removeLocaleInfo(floatString, DataType.FLOAT);
+        return removeLocaleInfo(floatString, float.class);
     }
 
     /*
      * Remove the locale specific prefixes, group separators, and locale
      * specific suffixes from input string
      */
-    private String removeLocaleInfo(String token, DataType type) {
+    private String removeLocaleInfo(String token, Class<?> type) {
         DecimalFormatSymbols dfs = decimalFormat.getDecimalFormatSymbols();
 
         StringBuilder tokenBuilder = new StringBuilder(token);
         boolean negative = removeLocaleSign(tokenBuilder);
         // Remove group separator
         String groupSeparator = String.valueOf(dfs.getGroupingSeparator());
-        int separatorIndex = -1;
+        int separatorIndex;
         while ((separatorIndex = tokenBuilder.indexOf(groupSeparator)) != -1) {
             tokenBuilder.delete(separatorIndex, separatorIndex + 1);
         }
@@ -1877,14 +1860,13 @@ public final class Scanner implements Closeable, Iterator<String> {
         String decimalSeparator = String.valueOf(dfs.getDecimalSeparator());
         separatorIndex = tokenBuilder.indexOf(decimalSeparator);
         StringBuilder result = new StringBuilder("");
-        if (DataType.INT == type) {
+        if (type == int.class) {
             for (int i = 0; i < tokenBuilder.length(); i++) {
                 if (Character.digit(tokenBuilder.charAt(i), Character.MAX_RADIX) != -1) {
                     result.append(tokenBuilder.charAt(i));
                 }
             }
-        }
-        if (DataType.FLOAT == type) {
+        } else if (type == float.class) {
             if (tokenBuilder.toString().equals(dfs.getNaN())) {
                 result.append("NaN");
             } else if (tokenBuilder.toString().equals(dfs.getInfinity())) {
@@ -1896,6 +1878,8 @@ public final class Scanner implements Closeable, Iterator<String> {
                     }
                 }
             }
+        } else {
+            throw new AssertionError("Unsupported type: " + type);
         }
         // Token is NaN or Infinity
         if (result.length() == 0) {
@@ -1955,9 +1939,9 @@ public final class Scanner implements Closeable, Iterator<String> {
      */
     private boolean setTokenRegion() {
         // The position where token begins
-        int tokenStartIndex = 0;
+        int tokenStartIndex;
         // The position where token ends
-        int tokenEndIndex = 0;
+        int tokenEndIndex;
         // Use delimiter pattern
         matcher.usePattern(delimiter);
         matcher.region(findStartIndex, bufferLength);
@@ -1968,7 +1952,7 @@ public final class Scanner implements Closeable, Iterator<String> {
         }
         tokenEndIndex = findDelimiterAfter();
         // If the second delimiter is not found
-        if (-1 == tokenEndIndex) {
+        if (tokenEndIndex == -1) {
             // Just first Delimiter Exists
             if (findStartIndex == bufferLength) {
                 return false;
@@ -1991,8 +1975,7 @@ public final class Scanner implements Closeable, Iterator<String> {
             if (matcher.find()) {
                 findComplete = true;
                 // If just delimiter remains
-                if (matcher.start() == findStartIndex
-                        && matcher.end() == bufferLength) {
+                if (matcher.start() == findStartIndex && matcher.end() == bufferLength) {
                     // If more input resource exists
                     if (!inputExhausted) {
                         readMore();
@@ -2010,7 +1993,7 @@ public final class Scanner implements Closeable, Iterator<String> {
             }
         }
         tokenStartIndex = matcher.end();
-        findStartIndex = matcher.end();
+        findStartIndex = tokenStartIndex;
         return tokenStartIndex;
     }
 
@@ -2022,7 +2005,7 @@ public final class Scanner implements Closeable, Iterator<String> {
         int tokenEndIndex;
         boolean setSuccess = false;
         // If no delimiter exists, but something exists in this scanner
-        if (-1 == findIndex && preStartIndex != bufferLength) {
+        if (findIndex == -1 && preStartIndex != bufferLength) {
             tokenStartIndex = preStartIndex;
             tokenEndIndex = bufferLength;
             findStartIndex = bufferLength;
@@ -2030,7 +2013,7 @@ public final class Scanner implements Closeable, Iterator<String> {
             setSuccess = true;
         }
         // If the first delimiter of scanner is not at the find start position
-        if (-1 != findIndex && preStartIndex != matcher.start()) {
+        if (findIndex != -1 && preStartIndex != matcher.start()) {
             tokenStartIndex = preStartIndex;
             tokenEndIndex = matcher.start();
             findStartIndex = matcher.start();
@@ -2042,7 +2025,7 @@ public final class Scanner implements Closeable, Iterator<String> {
     }
 
     private int findDelimiterAfter() {
-        int tokenEndIndex = 0;
+        int tokenEndIndex;
         boolean findComplete = false;
         while (!findComplete) {
             if (matcher.find()) {
@@ -2060,7 +2043,7 @@ public final class Scanner implements Closeable, Iterator<String> {
             }
         }
         tokenEndIndex = matcher.start();
-        findStartIndex = matcher.start();
+        findStartIndex = tokenEndIndex;
         return tokenEndIndex;
     }
 
@@ -2078,7 +2061,7 @@ public final class Scanner implements Closeable, Iterator<String> {
         }
 
         // Read input resource
-        int readCount = 0;
+        int readCount;
         try {
             buffer.limit(buffer.capacity());
             buffer.position(oldBufferLength);
@@ -2088,20 +2071,16 @@ public final class Scanner implements Closeable, Iterator<String> {
         } catch (IOException e) {
             // Consider the scenario: readable puts 4 chars into
             // buffer and then an IOException is thrown out. In this case,
-            // buffer is
-            // actually grown, but readable.read() will never return.
+            // buffer is actually grown, but readable.read() will never return.
             bufferLength = buffer.position();
-            /*
-             * Uses -1 to record IOException occurring, and no more input can be
-             * read.
-             */
+            // Use -1 to record IOException occurring, and no more input can be read.
             readCount = -1;
             lastIOException = e;
         }
 
         buffer.flip();
         buffer.position(oldPosition);
-        if (-1 == readCount) {
+        if (readCount == -1) {
             inputExhausted = true;
         } else {
             bufferLength = readCount + bufferLength;

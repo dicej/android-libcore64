@@ -57,15 +57,103 @@ struct EncoderCallbackContext {
     UConverterFromUCallback onMalformedInput;
 };
 
-struct UConverterDeleter {
-    void operator()(UConverter* p) const {
-        ucnv_close(p);
-    }
-};
-typedef UniquePtr<UConverter, UConverterDeleter> UniqueUConverter;
-
 static UConverter* toUConverter(jlong address) {
     return reinterpret_cast<UConverter*>(static_cast<uintptr_t>(address));
+}
+
+static bool collectStandardNames(JNIEnv* env, const char* canonicalName, const char* standard,
+                                 std::vector<std::string>& result) {
+  UErrorCode status = U_ZERO_ERROR;
+  UStringEnumeration e(ucnv_openStandardNames(canonicalName, standard, &status));
+  if (maybeThrowIcuException(env, "ucnv_openStandardNames", status)) {
+    return false;
+  }
+
+  int32_t count = e.count(status);
+  if (maybeThrowIcuException(env, "StringEnumeration::count", status)) {
+    return false;
+  }
+
+  for (int32_t i = 0; i < count; ++i) {
+    const UnicodeString* string = e.snext(status);
+    if (maybeThrowIcuException(env, "StringEnumeration::snext", status)) {
+      return false;
+    }
+    std::string s;
+    string->toUTF8String(s);
+    if (s.find_first_of("+,") == std::string::npos) {
+      result.push_back(s);
+    }
+  }
+
+  return true;
+}
+
+static const char* getICUCanonicalName(const char* name) {
+  UErrorCode error = U_ZERO_ERROR;
+  const char* canonicalName = NULL;
+  if ((canonicalName = ucnv_getCanonicalName(name, "MIME", &error)) != NULL) {
+    return canonicalName;
+  } else if ((canonicalName = ucnv_getCanonicalName(name, "IANA", &error)) != NULL) {
+    return canonicalName;
+  } else if ((canonicalName = ucnv_getCanonicalName(name, "", &error)) != NULL) {
+    return canonicalName;
+  } else if ((canonicalName = ucnv_getAlias(name, 0, &error)) != NULL) {
+    // We have some aliases in the form x-blah .. match those first.
+    return canonicalName;
+  } else if (strstr(name, "x-") == name) {
+    // Check if the converter can be opened with the name given.
+    error = U_ZERO_ERROR;
+    LocalUConverterPointer cnv(ucnv_open(name + 2, &error));
+    if (U_SUCCESS(error)) {
+      return name + 2;
+    }
+  }
+  return NULL;
+}
+
+// If a charset listed in the IANA Charset Registry is supported by an implementation
+// of the Java platform then its canonical name must be the name listed in the registry.
+// Many charsets are given more than one name in the registry, in which case the registry
+// identifies one of the names as MIME-preferred. If a charset has more than one registry
+// name then its canonical name must be the MIME-preferred name and the other names in
+// the registry must be valid aliases. If a supported charset is not listed in the IANA
+// registry then its canonical name must begin with one of the strings "X-" or "x-".
+static jstring getJavaCanonicalName(JNIEnv* env, const char* icuCanonicalName) {
+  UErrorCode status = U_ZERO_ERROR;
+
+  // Check to see if this is a well-known MIME or IANA name.
+  const char* cName = NULL;
+  if ((cName = ucnv_getStandardName(icuCanonicalName, "MIME", &status)) != NULL) {
+    return env->NewStringUTF(cName);
+  } else if ((cName = ucnv_getStandardName(icuCanonicalName, "IANA", &status)) != NULL) {
+    return env->NewStringUTF(cName);
+  }
+
+  // Check to see if an alias already exists with "x-" prefix, if yes then
+  // make that the canonical name.
+  int32_t aliasCount = ucnv_countAliases(icuCanonicalName, &status);
+  for (int i = 0; i < aliasCount; ++i) {
+    const char* name = ucnv_getAlias(icuCanonicalName, i, &status);
+    if (name != NULL && name[0] == 'x' && name[1] == '-') {
+      return env->NewStringUTF(name);
+    }
+  }
+
+  // As a last resort, prepend "x-" to any alias and make that the canonical name.
+  status = U_ZERO_ERROR;
+  const char* name = ucnv_getStandardName(icuCanonicalName, "UTR22", &status);
+  if (name == NULL && strchr(icuCanonicalName, ',') != NULL) {
+    name = ucnv_getAlias(icuCanonicalName, 1, &status);
+  }
+  // If there is no UTR22 canonical name then just return the original name.
+  if (name == NULL) {
+    name = icuCanonicalName;
+  }
+  UniquePtr<char[]> result(new char[2 + strlen(name) + 1]);
+  strcpy(&result[0], "x-");
+  strcat(&result[0], name);
+  return env->NewStringUTF(&result[0]);
 }
 
 static jlong NativeConverter_openConverter(JNIEnv* env, jclass, jstring converterName) {
@@ -126,10 +214,11 @@ static jint NativeConverter_encode(JNIEnv* env, jclass, jlong address,
     UErrorCode errorCode = U_ZERO_ERROR;
     ucnv_fromUnicode(cnv , &cTarget, cTargetLimit, &mySource, mySourceLimit, NULL, (UBool) flush, &errorCode);
     *sourceOffset = (mySource - uSource.get()) - *sourceOffset;
-    *targetOffset = (reinterpret_cast<jbyte*>(cTarget) - uTarget.get()) - *targetOffset;
+    *targetOffset = (reinterpret_cast<jbyte*>(cTarget) - uTarget.get());
 
     // If there was an error, count the problematic characters.
-    if (errorCode == U_ILLEGAL_CHAR_FOUND || errorCode == U_INVALID_CHAR_FOUND) {
+    if (errorCode == U_ILLEGAL_CHAR_FOUND || errorCode == U_INVALID_CHAR_FOUND ||
+        errorCode == U_TRUNCATED_CHAR_FOUND) {
         int8_t invalidUCharCount = 32;
         UChar invalidUChars[32];
         UErrorCode minorErrorCode = U_ZERO_ERROR;
@@ -184,7 +273,8 @@ static jint NativeConverter_decode(JNIEnv* env, jclass, jlong address,
     *targetOffset = cTarget - uTarget.get() - *targetOffset;
 
     // If there was an error, count the problematic bytes.
-    if (errorCode == U_ILLEGAL_CHAR_FOUND || errorCode == U_INVALID_CHAR_FOUND) {
+    if (errorCode == U_ILLEGAL_CHAR_FOUND || errorCode == U_INVALID_CHAR_FOUND ||
+        errorCode == U_TRUNCATED_CHAR_FOUND) {
         int8_t invalidByteCount = 32;
         char invalidBytes[32] = {'\0'};
         UErrorCode minorErrorCode = U_ZERO_ERROR;
@@ -230,74 +320,6 @@ static jfloat NativeConverter_getAveBytesPerChar(JNIEnv*, jclass, jlong address)
     return (cnv != NULL) ? ((ucnv_getMaxCharSize(cnv) + ucnv_getMinCharSize(cnv)) / 2.0) : -1;
 }
 
-static jboolean NativeConverter_canEncode(JNIEnv*, jclass, jlong address, jint codeUnit) {
-    UErrorCode errorCode = U_ZERO_ERROR;
-    UConverter* cnv = toUConverter(address);
-    if (cnv == NULL) {
-        return JNI_FALSE;
-    }
-
-    UChar srcBuffer[3];
-    const UChar* src = &srcBuffer[0];
-    const UChar* srcLimit = (codeUnit < 0x10000) ? &src[1] : &src[2];
-
-    char dstBuffer[5];
-    char* dst = &dstBuffer[0];
-    const char* dstLimit = &dstBuffer[4];
-
-    int i = 0;
-    UTF_APPEND_CHAR(&srcBuffer[0], i, 2, codeUnit);
-
-    ucnv_fromUnicode(cnv, &dst, dstLimit, &src, srcLimit, NULL, TRUE, &errorCode);
-    return U_SUCCESS(errorCode);
-}
-
-/*
- * If a charset listed in the IANA Charset Registry is supported by an implementation
- * of the Java platform then its canonical name must be the name listed in the registry.
- * Many charsets are given more than one name in the registry, in which case the registry
- * identifies one of the names as MIME-preferred. If a charset has more than one registry
- * name then its canonical name must be the MIME-preferred name and the other names in
- * the registry must be valid aliases. If a supported charset is not listed in the IANA
- * registry then its canonical name must begin with one of the strings "X-" or "x-".
- */
-static jstring getJavaCanonicalName(JNIEnv* env, const char* icuCanonicalName) {
-    UErrorCode status = U_ZERO_ERROR;
-
-    // Check to see if this is a well-known MIME or IANA name.
-    const char* cName = NULL;
-    if ((cName = ucnv_getStandardName(icuCanonicalName, "MIME", &status)) != NULL) {
-        return env->NewStringUTF(cName);
-    } else if ((cName = ucnv_getStandardName(icuCanonicalName, "IANA", &status)) != NULL) {
-        return env->NewStringUTF(cName);
-    }
-
-    // Check to see if an alias already exists with "x-" prefix, if yes then
-    // make that the canonical name.
-    int32_t aliasCount = ucnv_countAliases(icuCanonicalName, &status);
-    for (int i = 0; i < aliasCount; ++i) {
-        const char* name = ucnv_getAlias(icuCanonicalName, i, &status);
-        if (name != NULL && name[0] == 'x' && name[1] == '-') {
-            return env->NewStringUTF(name);
-        }
-    }
-
-    // As a last resort, prepend "x-" to any alias and make that the canonical name.
-    status = U_ZERO_ERROR;
-    const char* name = ucnv_getStandardName(icuCanonicalName, "UTR22", &status);
-    if (name == NULL && strchr(icuCanonicalName, ',') != NULL) {
-        name = ucnv_getAlias(icuCanonicalName, 1, &status);
-    }
-    // If there is no UTR22 canonical name then just return the original name.
-    if (name == NULL) {
-        name = icuCanonicalName;
-    }
-    UniquePtr<char[]> result(new char[2 + strlen(name) + 1]);
-    strcpy(&result[0], "x-");
-    strcat(&result[0], name);
-    return env->NewStringUTF(&result[0]);
-}
-
 static jobjectArray NativeConverter_getAvailableCharsetNames(JNIEnv* env, jclass) {
     int32_t num = ucnv_countAvailable();
     jobjectArray result = env->NewObjectArray(num, JniConstants::stringClass, NULL);
@@ -316,57 +338,6 @@ static jobjectArray NativeConverter_getAvailableCharsetNames(JNIEnv* env, jclass
         }
     }
     return result;
-}
-
-static jobjectArray getAliases(JNIEnv* env, const char* icuCanonicalName) {
-    // Get an upper bound on the number of aliases...
-    const char* myEncName = icuCanonicalName;
-    UErrorCode error = U_ZERO_ERROR;
-    size_t aliasCount = ucnv_countAliases(myEncName, &error);
-    if (aliasCount == 0 && myEncName[0] == 'x' && myEncName[1] == '-') {
-        myEncName = myEncName + 2;
-        aliasCount = ucnv_countAliases(myEncName, &error);
-    }
-    if (!U_SUCCESS(error)) {
-        return NULL;
-    }
-
-    // Collect the aliases we want...
-    std::vector<std::string> aliases;
-    for (size_t i = 0; i < aliasCount; ++i) {
-        const char* name = ucnv_getAlias(myEncName, i, &error);
-        if (!U_SUCCESS(error)) {
-            return NULL;
-        }
-        // TODO: why do we ignore these ones?
-        if (strchr(name, '+') == 0 && strchr(name, ',') == 0) {
-            aliases.push_back(name);
-        }
-    }
-    return toStringArray(env, aliases);
-}
-
-static const char* getICUCanonicalName(const char* name) {
-    UErrorCode error = U_ZERO_ERROR;
-    const char* canonicalName = NULL;
-    if ((canonicalName = ucnv_getCanonicalName(name, "MIME", &error)) != NULL) {
-        return canonicalName;
-    } else if((canonicalName = ucnv_getCanonicalName(name, "IANA", &error)) != NULL) {
-        return canonicalName;
-    } else if((canonicalName = ucnv_getCanonicalName(name, "", &error)) != NULL) {
-        return canonicalName;
-    } else if((canonicalName =  ucnv_getAlias(name, 0, &error)) != NULL) {
-        /* we have some aliases in the form x-blah .. match those first */
-        return canonicalName;
-    } else if (strstr(name, "x-") == name) {
-        /* check if the converter can be opened with the name given */
-        error = U_ZERO_ERROR;
-        UniqueUConverter cnv(ucnv_open(name + 2, &error));
-        if (cnv.get() != NULL) {
-            return name + 2;
-        }
-    }
-    return NULL;
 }
 
 static void CHARSET_ENCODER_CALLBACK(const void* rawContext, UConverterFromUnicodeArgs* args,
@@ -566,13 +537,13 @@ static jboolean NativeConverter_contains(JNIEnv* env, jclass, jstring name1, jst
     }
 
     UErrorCode errorCode = U_ZERO_ERROR;
-    UniqueUConverter converter1(ucnv_open(name1Chars.c_str(), &errorCode));
+    LocalUConverterPointer converter1(ucnv_open(name1Chars.c_str(), &errorCode));
     UnicodeSet set1;
-    ucnv_getUnicodeSet(converter1.get(), set1.toUSet(), UCNV_ROUNDTRIP_SET, &errorCode);
+    ucnv_getUnicodeSet(&*converter1, set1.toUSet(), UCNV_ROUNDTRIP_SET, &errorCode);
 
-    UniqueUConverter converter2(ucnv_open(name2Chars.c_str(), &errorCode));
+    LocalUConverterPointer converter2(ucnv_open(name2Chars.c_str(), &errorCode));
     UnicodeSet set2;
-    ucnv_getUnicodeSet(converter2.get(), set2.toUSet(), UCNV_ROUNDTRIP_SET, &errorCode);
+    ucnv_getUnicodeSet(&*converter2, set2.toUSet(), UCNV_ROUNDTRIP_SET, &errorCode);
 
     return U_SUCCESS(errorCode) && set1.containsAll(set2);
 }
@@ -582,11 +553,13 @@ static jobject NativeConverter_charsetForName(JNIEnv* env, jclass, jstring chars
     if (charsetNameChars.c_str() == NULL) {
         return NULL;
     }
+
     // Get ICU's canonical name for this charset.
     const char* icuCanonicalName = getICUCanonicalName(charsetNameChars.c_str());
     if (icuCanonicalName == NULL) {
         return NULL;
     }
+
     // Get Java's canonical name for this charset.
     jstring javaCanonicalName = getJavaCanonicalName(env, icuCanonicalName);
     if (env->ExceptionCheck()) {
@@ -594,17 +567,30 @@ static jobject NativeConverter_charsetForName(JNIEnv* env, jclass, jstring chars
     }
 
     // Check that this charset is supported.
-    // ICU doesn't offer any "isSupported", so we just open and immediately close.
-    // We ignore the UErrorCode because ucnv_open returning NULL is all the information we need.
-    UErrorCode dummy = U_ZERO_ERROR;
-    UniqueUConverter cnv(ucnv_open(icuCanonicalName, &dummy));
-    if (cnv.get() == NULL) {
-        return NULL;
+    {
+        // ICU doesn't offer any "isSupported", so we just open and immediately close.
+        UErrorCode error = U_ZERO_ERROR;
+        LocalUConverterPointer cnv(ucnv_open(icuCanonicalName, &error));
+        if (!U_SUCCESS(error)) {
+            return NULL;
+        }
     }
-    cnv.reset();
 
     // Get the aliases for this charset.
-    jobjectArray aliases = getAliases(env, icuCanonicalName);
+    std::vector<std::string> aliases;
+    if (!collectStandardNames(env, icuCanonicalName, "IANA", aliases)) {
+        return NULL;
+    }
+    if (!collectStandardNames(env, icuCanonicalName, "MIME", aliases)) {
+        return NULL;
+    }
+    if (!collectStandardNames(env, icuCanonicalName, "JAVA", aliases)) {
+        return NULL;
+    }
+    if (!collectStandardNames(env, icuCanonicalName, "WINDOWS", aliases)) {
+        return NULL;
+    }
+    jobjectArray javaAliases = toStringArray(env, aliases);
     if (env->ExceptionCheck()) {
         return NULL;
     }
@@ -616,11 +602,10 @@ static jobject NativeConverter_charsetForName(JNIEnv* env, jclass, jstring chars
         return NULL;
     }
     return env->NewObject(JniConstants::charsetICUClass, charsetConstructor,
-            javaCanonicalName, env->NewStringUTF(icuCanonicalName), aliases);
+            javaCanonicalName, env->NewStringUTF(icuCanonicalName), javaAliases);
 }
 
 static JNINativeMethod gMethods[] = {
-    NATIVE_METHOD(NativeConverter, canEncode, "(JI)Z"),
     NATIVE_METHOD(NativeConverter, charsetForName, "(Ljava/lang/String;)Ljava/nio/charset/Charset;"),
     NATIVE_METHOD(NativeConverter, closeConverter, "(J)V"),
     NATIVE_METHOD(NativeConverter, contains, "(Ljava/lang/String;Ljava/lang/String;)Z"),

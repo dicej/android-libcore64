@@ -69,7 +69,6 @@ static inline int mincore(void* addr, size_t length, unsigned char* vec) {
 // For statfs(3).
 #include <sys/param.h>
 #include <sys/mount.h>
-#define f_frsize f_bsize // TODO: close enough?
 
 #elif defined(WIN32)
 
@@ -161,9 +160,7 @@ strtok_r(char* source, const char* delimiters, char** context)
 
 #include <byteswap.h>
 #include <sys/sendfile.h>
-
-// For statfs(3).
-#include <sys/vfs.h> // Bionic doesn't have <sys/statvfs.h>
+#include <sys/statvfs.h>
 
 #endif
 

@@ -59,8 +59,6 @@ public class CurrencyTest extends junit.framework.TestCase {
         assertEquals("Schweizer Franken", Currency.getInstance("CHF").getDisplayName(new Locale("de", "CH")));
         assertEquals("franc suisse", Currency.getInstance("CHF").getDisplayName(new Locale("fr", "CH")));
         assertEquals("Franco Svizzero", Currency.getInstance("CHF").getDisplayName(new Locale("it", "CH")));
-        // Test behavior with unknown locales; should return the currency code.
-        assertEquals("CHF", Currency.getInstance("CHF").getDisplayName(new Locale("xx", "YY")));
     }
 
     public void test_getDefaultFractionDigits() throws Exception {
@@ -80,5 +78,13 @@ public class CurrencyTest extends junit.framework.TestCase {
         assertEquals("R$", Currency.getInstance(pt_BR).getSymbol(pt_PT));
         assertEquals("€", Currency.getInstance(pt_PT).getSymbol(pt_BR));
         assertEquals("€", Currency.getInstance(pt_PT).getSymbol(pt_PT));
+    }
+
+    public void test_nullLocales() {
+        Currency currency = Currency.getInstance(Locale.getDefault());
+        try {
+            currency.getSymbol(null);
+            fail();
+        } catch (NullPointerException expected) {}
     }
 }

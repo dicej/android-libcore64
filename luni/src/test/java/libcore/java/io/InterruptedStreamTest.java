@@ -57,7 +57,6 @@ public final class InterruptedStreamTest extends TestCase {
         if (sockets != null) {
             sockets[0].close();
             sockets[1].close();
-            sockets = null;
         }
         Thread.interrupted(); // clear interrupted bit
         super.tearDown();
@@ -208,7 +207,10 @@ public final class InterruptedStreamTest extends TestCase {
 
     private static void confirmInterrupted(Thread thread) throws InterruptedException {
         // validate and clear interrupted bit before join
-        assertTrue(Thread.interrupted());
-        thread.join();
+        try {
+            assertTrue(Thread.interrupted());
+        } finally {
+            thread.join();
+        }
     }
 }
