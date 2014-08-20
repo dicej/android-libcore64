@@ -29,13 +29,10 @@ import java.util.Random;
 import libcore.io.DeleteOnExit;
 import libcore.io.IoUtils;
 import libcore.io.Libcore;
-import libcore.io.StructStat;
-import libcore.io.StructStatFs;
 import libcore.io.Windows;
 import libcore.io.WinOs;
 
-import org.apache.harmony.luni.util.DeleteOnExit;
-import static libcore.io.OsConstants.*;
+import static android.system.OsConstants.*;
 
 /**
  * An "abstract" representation of a file system entity identified by a
