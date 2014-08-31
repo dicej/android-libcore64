@@ -309,6 +309,14 @@ enum sock_shutdown_cmd {
 
 #define IF_NAMESIZE				256
 
+enum rt_scope_t {
+    RT_SCOPE_UNIVERSE = 0,
+    RT_SCOPE_SITE = 200,
+    RT_SCOPE_LINK = 253,
+    RT_SCOPE_HOST = 254,
+    RT_SCOPE_NOWHERE = 255
+};
+
 typedef unsigned int uid_t;
 typedef unsigned int gid_t;
 typedef long loff_t;
