@@ -392,6 +392,9 @@ int sysconf(int name);
 ssize_t pread64(int fd, void *buf, size_t count, off_t offset);
 ssize_t pwrite64(int fd, const void *buf, size_t count, off_t offset);
 
+int _wlink(const wchar_t *path1, const wchar_t *path2);
+int _wmkfifo(const wchar_t *pathname, mode_t mode);
+
 // sys/fcntl.h
 
 struct flock64 {
@@ -403,9 +406,15 @@ struct flock64 {
 };
 int fcntl(int fd, int cmd, ... /* arg */ );
 
+int posix_fallocate64(int fd, off64_t offset, off64_t len);
+
 // sys/ioctl.h
 
 int ioctl(int fd, int request, void *argp);
+
+// sys/prctl.h
+int prctl(int option, unsigned long arg2, unsigned long arg3, unsigned long arg4, 
+          unsigned long arg5);
 
 // sys/stat.h
 
@@ -490,6 +499,9 @@ struct statvfs64 {
 	char f_basetype[FSTYPSZ];
 	char f_str[FSSTRSZ];
 } statvfs64_t; 
+
+int fstatvfs(int fd, struct statvfs *buf);
+int _wstatvfs(const wchar_t *path, struct statvfs *buf);
 
 // poll.h
 

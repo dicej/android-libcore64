@@ -169,12 +169,12 @@ struct addrinfo_deleter {
     } \
     _rc; })
 #else
-#define NET_FAILURE_RETRY(jni_env, return_type, syscall_name, java_fd, ...) ({ \
+#define IO_FAILURE_RETRY(jni_env, return_type, syscall_name, java_fd, ...) ({ \
     return_type _rc = -1; \
     { \
         /* TODO: this cast looks ugly and potentially unsafe, think about fixing somehow */ \
         SOCKET _fd = jniGetFDFromFileDescriptor(jni_env, java_fd); \
-        AsynchronousSocketCloseMonitor _monitor(_fd); \
+        AsynchronousCloseMonitor _monitor(_fd); \
         _rc = syscall_name(_fd, __VA_ARGS__); \
     } \
     if (_rc == SOCKET_ERROR || _rc == INVALID_SOCKET) { \
@@ -182,7 +182,7 @@ struct addrinfo_deleter {
         errno = windowsErrorToErrno(lastError); \
         switch (lastError) { \
         case WSAEINTR: { \
-                jniThrowException(jni_env, "java/net/SocketException", "Socket closed"); \
+                jniThrowException(jni_env, "java/io/IOException", "File descriptor closed"); \
                 break; \
             } \
         default: { \
@@ -218,6 +218,9 @@ struct addrinfo_deleter {
     #define u_statfs _wstatfs
     #define u_symlink _wsymlink
     #define u_unsetenv _wunsetenv
+    #define u_link _wlink
+    #define u_mkfifo _wmkfifo
+    #define u_statvfs _wstatvfs
 #else
     #define ScopedPathChars ScopedUtfChars
     #define ExecPathStrings ExecStrings
@@ -240,6 +243,9 @@ struct addrinfo_deleter {
     #define u_statfs statfs
     #define u_symlink symlink
     #define u_unsetenv unsetenv
+    #define u_link link
+    #define u_mkfifo mkfifo
+    #define u_statvfs statvfs
 #endif
 
 
@@ -583,9 +589,9 @@ static jobject Posix_accept(JNIEnv* env, jobject, jobject javaFd, jobject javaIn
 
     jint clientFd;
 #if !defined(__MINGW32__) && !defined(__MINGW64__)
-    clientFd = NET_FAILURE_RETRY(env, int, accept, javaFd, peer, peerLength);
+    clientFd = IO_FAILURE_RETRY(env, int, accept, javaFd, peer, peerLength);
 #else
-    SOCKET acceptSock = NET_FAILURE_RETRY(env, SOCKET, accept, javaFd, peer, peerLength);
+    SOCKET acceptSock = IO_FAILURE_RETRY(env, SOCKET, accept, javaFd, peer, peerLength);
     if (acceptSock != INVALID_SOCKET) {
     	clientFd = acceptSock;
     } else {
@@ -624,7 +630,7 @@ static void Posix_bind(JNIEnv* env, jobject, jobject javaFd, jobject javaAddress
     }
     const sockaddr* sa = reinterpret_cast<const sockaddr*>(&ss);
     // We don't need the return value because we'll already have thrown.
-    (void) NET_FAILURE_RETRY(env, int, bind, javaFd, sa, sa_len);
+    (void) IO_FAILURE_RETRY(env, int, bind, javaFd, sa, sa_len);
 }
 
 static void Posix_chmod(JNIEnv* env, jobject, jstring javaPath, jint mode) {
@@ -671,11 +677,11 @@ static void Posix_connect(JNIEnv* env, jobject, jobject javaFd, jobject javaAddr
     const sockaddr* sa = reinterpret_cast<const sockaddr*>(&ss);
     // We don't need the return value because we'll already have thrown.
 #if !defined(__MINGW32__) && !defined(__MINGW64__)
-    (void) NET_FAILURE_RETRY(env, int, connect, javaFd, sa, sa_len);
+    (void) IO_FAILURE_RETRY(env, int, connect, javaFd, sa, sa_len);
 #else
     // On Windows connect() may set errno to EWOULDBLOCK but Posix API awaits for EINPROGRESS,
     // thus we have a wrapper
-    (void) NET_FAILURE_RETRY(env, int, mingw_connect, javaFd, sa, sa_len);
+    (void) IO_FAILURE_RETRY(env, int, mingw_connect, javaFd, sa, sa_len);
 #endif
 }
 
@@ -1052,6 +1058,8 @@ static jint Posix_gettid(JNIEnv* env __unused, jobject) {
   return static_cast<jint>(owner);
 #elif defined(__BIONIC__)
   return gettid();
+#elif defined(__MINGW32__) || defined(__MINGW64__)
+  return (int)GetCurrentThreadId();
 #else
   return syscall(__NR_gettid);
 #endif
@@ -1129,15 +1137,15 @@ static void Posix_lchown(JNIEnv* env, jobject, jstring javaPath, jint uid, jint 
 }
 
 static void Posix_link(JNIEnv* env, jobject, jstring javaOldPath, jstring javaNewPath) {
-    ScopedUtfChars oldPath(env, javaOldPath);
+    ScopedPathChars oldPath(env, javaOldPath);
     if (oldPath.c_str() == NULL) {
         return;
     }
-    ScopedUtfChars newPath(env, javaNewPath);
+    ScopedPathChars newPath(env, javaNewPath);
     if (newPath.c_str() == NULL) {
         return;
     }
-    throwIfMinusOne(env, "link", TEMP_FAILURE_RETRY(link(oldPath.c_str(), newPath.c_str())));
+    throwIfMinusOne(env, "link", TEMP_FAILURE_RETRY(u_link(oldPath.c_str(), newPath.c_str())));
 }
 
 static void Posix_listen(JNIEnv* env, jobject, jobject javaFd, jint backlog) {
@@ -1173,11 +1181,11 @@ static void Posix_mkdir(JNIEnv* env, jobject, jstring javaPath, jint mode) {
 }
 
 static void Posix_mkfifo(JNIEnv* env, jobject, jstring javaPath, jint mode) {
-    ScopedUtfChars path(env, javaPath);
+    ScopedPathChars path(env, javaPath);
     if (path.c_str() == NULL) {
         return;
     }
-    throwIfMinusOne(env, "mkfifo", TEMP_FAILURE_RETRY(mkfifo(path.c_str(), mode)));
+    throwIfMinusOne(env, "mkfifo", TEMP_FAILURE_RETRY(u_mkfifo(path.c_str(), mode)));
 }
 
 static void Posix_mlock(JNIEnv* env, jobject, jlong address, jlong byteCount) {
@@ -1374,9 +1382,9 @@ static jint Posix_recvfromBytes(JNIEnv* env, jobject, jobject javaFd, jobject ja
     sockaddr* from = (javaInetSocketAddress != NULL) ? reinterpret_cast<sockaddr*>(&ss) : NULL;
     socklen_t* fromLength = (javaInetSocketAddress != NULL) ? &sl : 0;
 #if !defined(__MINGW32__) && !defined(__MINGW64__)
-    jint recvCount = NET_FAILURE_RETRY(env, ssize_t, recvfrom, javaFd, bytes.get() + byteOffset, byteCount, flags, from, fromLength);
+    jint recvCount = IO_FAILURE_RETRY(env, ssize_t, recvfrom, javaFd, bytes.get() + byteOffset, byteCount, flags, from, fromLength);
 #else
-    jint recvCount = NET_FAILURE_RETRY(env, ssize_t, recvfrom, javaFd, reinterpret_cast<char*>(bytes.get() + byteOffset), byteCount, flags, from, fromLength);
+    jint recvCount = IO_FAILURE_RETRY(env, ssize_t, recvfrom, javaFd, reinterpret_cast<char*>(bytes.get() + byteOffset), byteCount, flags, from, fromLength);
 #endif
     fillInetSocketAddress(env, recvCount, javaInetSocketAddress, ss);
     return recvCount;
@@ -1432,9 +1440,9 @@ static jint Posix_sendtoBytes(JNIEnv* env, jobject, jobject javaFd, jobject java
     }
     const sockaddr* to = (javaInetAddress != NULL) ? reinterpret_cast<const sockaddr*>(&ss) : NULL;
 #if !defined(__MINGW32__) && !defined(__MINGW64__)
-    return NET_FAILURE_RETRY(env, ssize_t, sendto, javaFd, bytes.get() + byteOffset, byteCount, flags, to, sa_len);
+    return IO_FAILURE_RETRY(env, ssize_t, sendto, javaFd, bytes.get() + byteOffset, byteCount, flags, to, sa_len);
 #else
-    return NET_FAILURE_RETRY(env, ssize_t, sendto, javaFd, reinterpret_cast<const char*>(bytes.get() + byteOffset), byteCount, flags, to, sa_len);
+    return IO_FAILURE_RETRY(env, ssize_t, sendto, javaFd, reinterpret_cast<const char*>(bytes.get() + byteOffset), byteCount, flags, to, sa_len);
 #endif
 }
 
@@ -1580,7 +1588,11 @@ static void Posix_setsockoptGroupSourceReq(JNIEnv* env, jobject, jobject javaFd,
     }
 
     int fd = jniGetFDFromFileDescriptor(env, javaFd);
+#if defined(__MINGW32__) || defined(__MINGW64__)
+    int rc = TEMP_FAILURE_RETRY(setsockopt(fd, level, option, reinterpret_cast<char*>(&req), sizeof(req)));
+#else
     int rc = TEMP_FAILURE_RETRY(setsockopt(fd, level, option, &req, sizeof(req)));
+#endif
     if (rc == -1 && errno == EINVAL) {
         // Maybe we're a 32-bit binary talking to a 64-bit kernel?
         // glibc doesn't automatically handle this.
@@ -1595,7 +1607,11 @@ static void Posix_setsockoptGroupSourceReq(JNIEnv* env, jobject, jobject javaFd,
         req64.gsr_interface = req.gsr_interface;
         memcpy(&req64.gsr_group, &req.gsr_group, sizeof(req.gsr_group));
         memcpy(&req64.gsr_source, &req.gsr_source, sizeof(req.gsr_source));
+#if defined(__MINGW32__) || defined(__MINGW64__)
+        rc = TEMP_FAILURE_RETRY(setsockopt(fd, level, option, reinterpret_cast<char*>(&req64), sizeof(req64)));
+#else
         rc = TEMP_FAILURE_RETRY(setsockopt(fd, level, option, &req64, sizeof(req64)));
+#endif
     }
     throwIfMinusOne(env, "setsockopt", rc);
 }
@@ -1668,12 +1684,12 @@ static jobject Posix_stat(JNIEnv* env, jobject, jstring javaPath) {
 }
 
 static jobject Posix_statvfs(JNIEnv* env, jobject, jstring javaPath) {
-    ScopedUtfChars path(env, javaPath);
+    ScopedPathChars path(env, javaPath);
     if (path.c_str() == NULL) {
         return NULL;
     }
     struct statvfs sb;
-    int rc = TEMP_FAILURE_RETRY(statvfs(path.c_str(), &sb));
+    int rc = TEMP_FAILURE_RETRY(u_statvfs(path.c_str(), &sb));
     if (rc == -1) {
         throwErrnoException(env, "statvfs");
         return NULL;
