@@ -448,6 +448,49 @@ struct statfs {
 int fstatfs(int fd, struct statfs *buf);
 int _wstatfs(const wchar_t *path, struct statfs *buf);
 
+// sys/types.h
+typedef unsigned long	fsblkcnt_t;
+typedef unsigned long   fsfilcnt_t;
+typedef unsigned long long  fsblkcnt64_t;
+typedef unsigned long long  fsfilcnt64_t;
+#define FSTYPSZ 32
+#define FSSTRSZ 32
+
+// statvfs.h
+struct statvfs {
+	unsigned long f_bsize;
+	unsigned long f_frsize;
+	fsblkcnt_t f_blocks;
+	fsblkcnt_t f_bfree;
+	fsblkcnt_t f_bavail;
+	fsfilcnt_t f_files;
+	fsfilcnt_t f_ffree;
+	fsfilcnt_t f_favail;
+	unsigned long f_fsid;
+	unsigned long f_flag;
+	unsigned long f_namemax;
+	unsigned long f_type;
+	char f_basetype[FSTYPSZ];
+	char f_str[FSSTRSZ];
+}; 
+
+struct statvfs64 {
+	unsigned long f_bsize;
+	unsigned long f_frsize;
+	fsblkcnt64_t f_blocks;
+	fsblkcnt64_t f_bfree;
+	fsblkcnt64_t f_bavail;
+	fsfilcnt64_t f_files;
+	fsfilcnt64_t f_ffree;
+	fsfilcnt64_t f_favail;
+	unsigned long f_fsid;
+	unsigned long f_flag;
+	unsigned long f_namemax;
+	unsigned long f_type;
+	char f_basetype[FSTYPSZ];
+	char f_str[FSSTRSZ];
+} statvfs64_t; 
+
 // poll.h
 
 struct pollfd {
