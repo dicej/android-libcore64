@@ -34,7 +34,7 @@
 
 #include "mingw-extensions.h"
 
-bool realpath(const char* path, std::string& resolved_path) {
+bool canonicalize_path(const char* path, std::string& resolved_path) {
     char resolved[MAX_PATH];
     bool res = mingw_realpath(path, resolved);
 	resolved_path.assign(resolved);

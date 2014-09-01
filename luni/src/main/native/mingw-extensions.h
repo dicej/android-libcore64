@@ -483,23 +483,6 @@ struct statvfs {
 	char f_str[FSSTRSZ];
 }; 
 
-struct statvfs64 {
-	unsigned long f_bsize;
-	unsigned long f_frsize;
-	fsblkcnt64_t f_blocks;
-	fsblkcnt64_t f_bfree;
-	fsblkcnt64_t f_bavail;
-	fsfilcnt64_t f_files;
-	fsfilcnt64_t f_ffree;
-	fsfilcnt64_t f_favail;
-	unsigned long f_fsid;
-	unsigned long f_flag;
-	unsigned long f_namemax;
-	unsigned long f_type;
-	char f_basetype[FSTYPSZ];
-	char f_str[FSSTRSZ];
-} statvfs64_t; 
-
 int fstatvfs(int fd, struct statvfs *buf);
 int _wstatvfs(const wchar_t *path, struct statvfs *buf);
 
