@@ -56,7 +56,6 @@
     #define u_open open
     #define u_lstat lstat
     #define u_stat stat
-    #define _stat stat
     #define _fstat fstat
     #define u_access access
     #define u_chmod chmod
@@ -84,6 +83,8 @@
     #define u_string_t std::string
     #define u_DIR DIR
     #define u_dirent dirent
+    #define _stat stat
+    #define _utimbuf utimbuf
 #endif
 
 #endif // UNICODE_DEFINES_H
