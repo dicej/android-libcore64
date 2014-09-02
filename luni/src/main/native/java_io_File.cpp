@@ -38,61 +38,72 @@
 #include <unistd.h>
 #include <utime.h>
 
+#if defined(__MINGW32__) || defined(__MINGW64__)
+    #include "mingw-extensions.h"
+    #include "toStringArrayW.h"
+#endif
+
+#include "unicode-defines.h"
+
 static jstring File_canonicalizePath(JNIEnv* env, jclass, jstring javaPath) {
-  ScopedUtfChars path(env, javaPath);
+  ScopedPathChars path(env, javaPath);
   if (path.c_str() == NULL) {
     return NULL;
   }
 
-  extern bool canonicalize_path(const char* path, std::string& resolved);
-  std::string result;
+  extern bool canonicalize_path(const u_char_t* path, u_string_t& resolved);
+  u_string_t result;
   if (!canonicalize_path(path.c_str(), result)) {
     jniThrowIOException(env, errno);
     return NULL;
   }
+#if defined(__MINGW32__) || defined(__MINGW64__)
+  return env->NewString(result.c_str(), result.length());
+#else
   return env->NewStringUTF(result.c_str());
+#endif
 }
 
 static jboolean File_setLastModifiedImpl(JNIEnv* env, jclass, jstring javaPath, jlong ms) {
-  ScopedUtfChars path(env, javaPath);
+  ScopedPathChars path(env, javaPath);
   if (path.c_str() == NULL) {
     return JNI_FALSE;
   }
 
   // We want to preserve the access time.
-  struct stat sb;
-  if (stat(path.c_str(), &sb) == -1) {
+  struct _stat sb;
+  if (u_stat(path.c_str(), &sb) == -1) {
     return JNI_FALSE;
   }
 
   // TODO: we could get microsecond resolution with utimes(3), "legacy" though it is.
-  utimbuf times;
+  _utimbuf times;
   times.actime = sb.st_atime;
   times.modtime = static_cast<time_t>(ms / 1000);
-  return (utime(path.c_str(), &times) == 0);
+  return (u_utime(path.c_str(), &times) == 0);
 }
 
 // Iterates over the filenames in the given directory.
 class ScopedReaddir {
  public:
-  ScopedReaddir(const char* path) {
-    mDirStream = opendir(path);
+  ScopedReaddir(const u_char_t* path) {
+    mDirStream = u_opendir(path);
     mIsBad = (mDirStream == NULL);
   }
 
   ~ScopedReaddir() {
     if (mDirStream != NULL) {
-      closedir(mDirStream);
+      u_closedir(mDirStream);
     }
   }
 
   // Returns the next filename, or NULL.
-  const char* next() {
+  const u_char_t* next() {
     if (mIsBad) {
       return NULL;
     }
     errno = 0;
-    dirent* result = readdir(mDirStream);
+    u_dirent* result = u_readdir(mDirStream);
     if (result != NULL) {
       return result->d_name;
     }
@@ -108,7 +119,7 @@ class ScopedReaddir {
   }
 
  private:
-  DIR* mDirStream;
+  u_DIR* mDirStream;
   bool mIsBad;
 
   // Disallow copy and assignment.
@@ -116,20 +127,24 @@ class ScopedReaddir {
   void operator=(const ScopedReaddir&);
 };
 
-typedef std::vector<std::string> DirEntries;
+typedef std::vector<u_string_t> DirEntries;
 
 // Reads the directory referred to by 'pathBytes', adding each directory entry
 // to 'entries'.
 static bool readDirectory(JNIEnv* env, jstring javaPath, DirEntries& entries) {
-  ScopedUtfChars path(env, javaPath);
+  ScopedPathChars path(env, javaPath);
   if (path.c_str() == NULL) {
     return false;
   }
 
   ScopedReaddir dir(path.c_str());
-  const char* filename;
+  const u_char_t* filename;
   while ((filename = dir.next()) != NULL) {
+#if defined(__MINGW32__) || defined(__MINGW64__)
+    if (wcscmp(filename, L".") != 0 && wcscmp(filename, L"..") != 0) {
+#else
     if (strcmp(filename, ".") != 0 && strcmp(filename, "..") != 0) {
+#endif
       // TODO: this hides allocation failures from us. Push directory iteration up into Java?
       entries.push_back(filename);
     }
@@ -144,7 +159,11 @@ static jobjectArray File_listImpl(JNIEnv* env, jclass, jstring javaPath) {
     return NULL;
   }
   // Translate the intermediate form into a Java String[].
+#if defined(__MINGW32__) || defined(__MINGW64__)
+  return toStringArrayW(env, entries);
+#else
   return toStringArray(env, entries);
+#endif
 }
 
 static JNINativeMethod gMethods[] = {
