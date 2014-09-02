@@ -183,6 +183,13 @@ public class File implements Serializable, Comparable<File> {
 
     // Removes duplicate adjacent slashes and any trailing slash.
     private static String fixSlashes(String origPath) {
+    	/* On Windows both "/" and "\" are supported as file separators, but 
+    	 * file.separator is set to "\", which breaks handling of paths like "c:/something".
+    	 * So in case of Windows system we first canonicalize separators to "\" 
+    	 */
+    	if (Libcore.os instanceof WinOs) {
+    		origPath = origPath.replace('/', separatorChar);
+    	}
         // Remove duplicate adjacent slashes.
         boolean lastWasSlash = false;
         char[] newPath = origPath.toCharArray();
