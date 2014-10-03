@@ -370,6 +370,13 @@ exit:
 	return res;
 }
 
+int posix_fallocate64(int fd, off64_t offset, off64_t len) 
+{
+	errno = EBADF;
+	FIXME_STUB_ERRNO("this function isn't supported yet");
+	return -1;
+}
+
 // fdatasync
 
 int fdatasync(int fd)
@@ -472,6 +479,14 @@ int uname(struct utsname *buf)
 	strcpy(buf->nodename, "localhost");
 	
 	return 0;
+}
+
+int prctl(int option, unsigned long arg2, unsigned long arg3, unsigned long arg4, 
+          unsigned long arg5)
+{
+    errno = EBADF;
+    FIXME_STUB_ERRNO("this function isn't supported yet");
+    return -1;
 }
 
 int ioctl(int fd, int request, void *argp)
@@ -719,6 +734,20 @@ int _wsetenv(const wchar_t *name, const wchar_t *value, int replace) {
 }
 
 int fstatfs (int fd, struct statfs *buf)
+{
+	errno = EINVAL;
+	FIXME_STUB_ERRNO("this function isn't supported yet");
+	return -1;
+}
+
+int fstatvfs (int fd, struct statvfs *buf)
+{
+	errno = EINVAL;
+	FIXME_STUB_ERRNO("this function isn't supported yet");
+	return -1;
+}
+
+int _wstatvfs(const wchar_t *path, struct statvfs *buf)
 {
 	errno = EINVAL;
 	FIXME_STUB_ERRNO("this function isn't supported yet");
@@ -1193,6 +1222,20 @@ ssize_t pwrite64(int fd, const void *buf, size_t count, off_t offset)
     lseek (fd, saved_pos, SEEK_SET);
 
     return retval;
+}
+
+int _wlink(const wchar_t *path1, const wchar_t *path2)
+{
+	errno = EINVAL;
+	FIXME_STUB_ERRNO("this function isn't implemented");
+	return -1;
+}
+
+int _wmkfifo(const wchar_t *pathname, mode_t mode)
+{
+	errno = EINVAL;
+	FIXME_STUB_ERRNO("this function isn't implemented");
+	return -1;
 }
 
 ssize_t sendfile(int out_fd, int in_fd, off_t * offset, size_t count)

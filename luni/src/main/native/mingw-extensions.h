@@ -309,6 +309,14 @@ enum sock_shutdown_cmd {
 
 #define IF_NAMESIZE				256
 
+enum rt_scope_t {
+    RT_SCOPE_UNIVERSE = 0,
+    RT_SCOPE_SITE = 200,
+    RT_SCOPE_LINK = 253,
+    RT_SCOPE_HOST = 254,
+    RT_SCOPE_NOWHERE = 255
+};
+
 typedef unsigned int uid_t;
 typedef unsigned int gid_t;
 typedef long loff_t;
@@ -384,6 +392,9 @@ int sysconf(int name);
 ssize_t pread64(int fd, void *buf, size_t count, off_t offset);
 ssize_t pwrite64(int fd, const void *buf, size_t count, off_t offset);
 
+int _wlink(const wchar_t *path1, const wchar_t *path2);
+int _wmkfifo(const wchar_t *pathname, mode_t mode);
+
 // sys/fcntl.h
 
 struct flock64 {
@@ -395,9 +406,15 @@ struct flock64 {
 };
 int fcntl(int fd, int cmd, ... /* arg */ );
 
+int posix_fallocate64(int fd, off64_t offset, off64_t len);
+
 // sys/ioctl.h
 
 int ioctl(int fd, int request, void *argp);
+
+// sys/prctl.h
+int prctl(int option, unsigned long arg2, unsigned long arg3, unsigned long arg4, 
+          unsigned long arg5);
 
 // sys/stat.h
 
@@ -439,6 +456,35 @@ struct statfs {
 
 int fstatfs(int fd, struct statfs *buf);
 int _wstatfs(const wchar_t *path, struct statfs *buf);
+
+// sys/types.h
+typedef unsigned long	fsblkcnt_t;
+typedef unsigned long   fsfilcnt_t;
+typedef unsigned long long  fsblkcnt64_t;
+typedef unsigned long long  fsfilcnt64_t;
+#define FSTYPSZ 32
+#define FSSTRSZ 32
+
+// statvfs.h
+struct statvfs {
+	unsigned long f_bsize;
+	unsigned long f_frsize;
+	fsblkcnt_t f_blocks;
+	fsblkcnt_t f_bfree;
+	fsblkcnt_t f_bavail;
+	fsfilcnt_t f_files;
+	fsfilcnt_t f_ffree;
+	fsfilcnt_t f_favail;
+	unsigned long f_fsid;
+	unsigned long f_flag;
+	unsigned long f_namemax;
+	unsigned long f_type;
+	char f_basetype[FSTYPSZ];
+	char f_str[FSSTRSZ];
+}; 
+
+int fstatvfs(int fd, struct statvfs *buf);
+int _wstatvfs(const wchar_t *path, struct statvfs *buf);
 
 // poll.h
 
